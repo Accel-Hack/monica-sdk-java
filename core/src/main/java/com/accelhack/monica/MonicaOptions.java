@@ -11,9 +11,11 @@ import java.util.function.Supplier;
 
 public final class MonicaOptions {
   static final String DEFAULT_SDK_NAME = "com.accelhack.monica:monica-core";
-  static final String DEFAULT_SDK_VERSION = "0.1.0";
+  static final String DEFAULT_SDK_VERSION = "0.1.1";
   /** The bound the event schema puts on {@code environment}; integrations validate against it. */
   public static final int MAX_ENVIRONMENT_LENGTH = 128;
+  /** The item limit ingest puts on one envelope; a larger batch is split before it goes out. */
+  static final int MAX_ITEMS_PER_ENVELOPE = 100;
   static final int DEFAULT_MAX_QUEUE_SIZE = 100;
   static final int DEFAULT_BATCH_SIZE = 30;
   static final Duration DEFAULT_FLUSH_INTERVAL = Duration.ofSeconds(5);
@@ -48,7 +50,8 @@ public final class MonicaOptions {
     beforeSend = builder.beforeSend;
     maxQueueSize = positive(builder.maxQueueSize, "maxQueueSize");
     maxBreadcrumbs = positive(builder.maxBreadcrumbs, "maxBreadcrumbs");
-    batchSize = Math.min(positive(builder.batchSize, "batchSize"), Math.min(maxQueueSize, 100));
+    batchSize = Math.min(positive(builder.batchSize, "batchSize"),
+        Math.min(maxQueueSize, MAX_ITEMS_PER_ENVELOPE));
     flushInterval = positive(builder.flushInterval, "flushInterval");
     flushTimeout = positive(builder.flushTimeout, "flushTimeout");
     if (!Double.isFinite(builder.sampleRate) || builder.sampleRate < 0 || builder.sampleRate > 1) {
