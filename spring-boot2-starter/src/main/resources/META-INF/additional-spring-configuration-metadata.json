@@ -1,0 +1,14 @@
+{
+  "properties": [
+    {
+      "name": "monica.dsn",
+      "type": "java.lang.String",
+      "description": "Secret MONICA DSN. Supply it from an environment variable, not source control."
+    },
+    {
+      "name": "monica.logback.allowed-mdc-keys",
+      "type": "java.util.List<java.lang.String>",
+      "description": "Only these MDC keys may be copied into an event."
+    }
+  ]
+}

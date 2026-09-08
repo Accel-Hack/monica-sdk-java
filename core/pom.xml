@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.accelhack.monica</groupId>
+    <artifactId>monica-java-sdk</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+  <artifactId>monica-core</artifactId>
+  <name>MONICA Java Core</name>
+  <description>Framework-independent Java client for capturing and sending MONICA events</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!--
+        monica-core ships inside every Android APK, so it is held to API 26 as well. The
+        JDK HttpClient transport is the one deliberate exception: it exists for server
+        applications, nothing on Android instantiates it, and monica-android's keep rules
+        tell R8 not to warn about it.
+      -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>animal-sniffer-maven-plugin</artifactId>
+        <configuration>
+          <ignores>
+            <ignore>java.net.http.*</ignore>
+          </ignores>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -1,0 +1,6 @@
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+com.accelhack.monica.spring.boot2.MonicaAutoConfiguration,\
+com.accelhack.monica.spring.boot2.MonicaWebAutoConfiguration,\
+com.accelhack.monica.spring.boot2.MonicaSchedulingAutoConfiguration,\
+com.accelhack.monica.spring.boot2.MonicaLogbackAutoConfiguration,\
+com.accelhack.monica.spring.boot2.MonicaHealthAutoConfiguration
