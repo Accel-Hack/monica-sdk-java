@@ -12,6 +12,20 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.zip.GZIPOutputStream;
 
 public final class JdkHttpTransport implements MonicaTransport {
+  /**
+   * The retry policy the public contract publishes in {@code transport.json}. Kept as named
+   * constants so the contract test can compare them with the vendored bundle instead of
+   * re-reading them out of the prose.
+   */
+  static final String INGEST_PATH = "/v1/envelope";
+  static final String SECRET_KEY_PREFIX = "msk_";
+  static final long RETRY_AFTER_MAX_SECONDS = 60;
+  static final long BACKOFF_BASE_MILLIS = 1_000L;
+  static final int BACKOFF_FACTOR = 2;
+  static final long BACKOFF_MAX_MILLIS = 30_000L;
+  static final double BACKOFF_JITTER_MIN = 0.5;
+  static final double BACKOFF_JITTER_MAX = 1.0;
+
   private final HttpClient client;
   private final ObjectMapper mapper;
   private final URI endpoint;
@@ -63,7 +77,7 @@ public final class JdkHttpTransport implements MonicaTransport {
       String value = response.headers().firstValue("Retry-After").orElse("");
       try {
         long seconds = Long.parseLong(value);
-        return Duration.ofSeconds(Math.min(Math.max(seconds, 0), 60));
+        return Duration.ofSeconds(Math.min(Math.max(seconds, 0), RETRY_AFTER_MAX_SECONDS));
       } catch (NumberFormatException ignored) {
         // Fall through to jittered backoff.
       }
@@ -71,9 +85,15 @@ public final class JdkHttpTransport implements MonicaTransport {
     return backoff(attempt);
   }
 
-  private static Duration backoff(int attempt) {
-    long ceiling = Math.min(1_000L << Math.min(attempt, 5), 30_000L);
-    return Duration.ofMillis(ThreadLocalRandom.current().nextLong(ceiling / 2, ceiling + 1));
+  static Duration backoff(int attempt) {
+    long ceiling = BACKOFF_BASE_MILLIS;
+    for (int step = 0; step < attempt && ceiling < BACKOFF_MAX_MILLIS; step++) {
+      ceiling *= BACKOFF_FACTOR;
+    }
+    ceiling = Math.min(ceiling, BACKOFF_MAX_MILLIS);
+    long floor = (long) (ceiling * BACKOFF_JITTER_MIN);
+    long cap = (long) (ceiling * BACKOFF_JITTER_MAX);
+    return Duration.ofMillis(ThreadLocalRandom.current().nextLong(floor, cap + 1));
   }
 
   private static void sleep(Duration delay) throws InterruptedException {
@@ -95,7 +115,7 @@ public final class JdkHttpTransport implements MonicaTransport {
       String key = userInfo == null ? "" : java.net.URLDecoder.decode(
           userInfo.split(":", 2)[0], StandardCharsets.UTF_8.name());
       if (key.isEmpty()) throw new IllegalArgumentException("dsn must contain an API key");
-      if (!key.startsWith("msk_")) {
+      if (!key.startsWith(SECRET_KEY_PREFIX)) {
         throw new IllegalArgumentException("Java dsn must contain a secret msk_ key");
       }
       boolean local = "localhost".equals(uri.getHost()) || "127.0.0.1".equals(uri.getHost());
@@ -103,7 +123,7 @@ public final class JdkHttpTransport implements MonicaTransport {
         throw new IllegalArgumentException("dsn must use https except for localhost");
       }
       URI endpoint = new URI(uri.getScheme(), null, uri.getHost(), uri.getPort(),
-          "/v1/envelope", null, null);
+          INGEST_PATH, null, null);
       return new ParsedDsn(endpoint, key);
     } catch (IllegalArgumentException failure) {
       throw failure;
