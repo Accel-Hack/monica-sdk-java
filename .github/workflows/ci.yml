@@ -14,10 +14,6 @@ on:
   pull_request:
   push:
     branches: [main]
-  schedule:
-    # 公開契約は MONICA 側の都合で動く。PR が来るまで気付かないと、
-    # 気付いたときには「無関係な PR が落ちる」形で出てくる。
-    - cron: "23 21 * * *"
   workflow_dispatch:
 
 concurrency:

@@ -1,14 +1,15 @@
 name: Maven release
 
 # pom.xml を X.Y.Z-SNAPSHOT へ更新して main へ merge した後、
-# maven-vX.Y.Z tag をその commit へ付けると Maven Central へ公開する。
+# vX.Y.Z tag をその commit へ付けると Maven Central へ公開する。
+# repository が Maven の artifact しか出さないので、tag に maven- の prefix は付けない。
 #
 # 移設元は Accel-Hack/monica の .github/workflows/maven-release.yml。
 # 変えたのは repository 名と、pom.xml が root に来たことによる `-f sdk/java/pom.xml` の削除。
 on:
   push:
     tags:
-      - "maven-v*"
+      - "v*"
 
 concurrency:
   group: maven-release
@@ -51,13 +52,13 @@ jobs:
           set -euo pipefail
           git fetch origin main
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
-            echo "::error::Maven release tagはmainに含まれるcommitへ付けてください。"
+            echo "::error::release tagはmainに含まれるcommitへ付けてください。"
             exit 1
           }
 
-          tag_version="${GITHUB_REF_NAME#maven-v}"
+          tag_version="${GITHUB_REF_NAME#v}"
           if [[ ! "$tag_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Maven release tagはmaven-vX.Y.Z形式にしてください。"
+            echo "::error::release tagはvX.Y.Z形式にしてください。"
             exit 1
           fi
           pom_version=$(mvn --batch-mode --no-transfer-progress \

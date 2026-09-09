@@ -63,7 +63,7 @@ byte 順に改行で繋いだ文字列の sha256）で、版番号ではない�
 
 CI の `公開契約` job は `--check-remote` で配信元の `revision` を取り込み済みのものと
 比べる。落ちたら `python3 scripts/spec-sync.py` で取り込み直し、`mvn verify` を
-通してから commit する。schedule でも毎日回すので、契約が動けば PR を待たずに気付く。
+通してから commit する。
 
 ### まだ実装していない契約
 
@@ -83,7 +83,7 @@ CI の `公開契約` job は `--check-remote` で配信元の `revision` を取
 
 4 個の repository secret `MAVEN_CENTRAL_USERNAME`、`MAVEN_CENTRAL_TOKEN`、
 `MAVEN_GPG_PRIVATE_KEY`、`MAVEN_GPG_PASSPHRASE` を設定し、対応する main commit へ
-`maven-vX.Y.Z` tag を付けると `.github/workflows/maven-release.yml` が動く。
+`vX.Y.Z` tag を付けると `.github/workflows/maven-release.yml` が動く。
 
 workflow は tag と POM version の対応を検証し、release version へ一時変換してから、
 source / Javadoc jar と GPG signature を含む 3 artifact を Maven Central へ公開する。
