@@ -380,6 +380,7 @@ public final class MonicaClient implements AutoCloseable {
     public Builder flushTimeout(Duration value) { options.flushTimeout(value); return this; }
     public Builder sampleRate(double value) { options.sampleRate(value); return this; }
     public Builder transport(MonicaTransport value) { options.transport(value); return this; }
+    public Builder onDiagnostic(MonicaDiagnostic value) { options.onDiagnostic(value); return this; }
     public Builder maxRetries(int value) { options.maxRetries(value); return this; }
     public Builder requestTimeout(Duration value) { options.requestTimeout(value); return this; }
 

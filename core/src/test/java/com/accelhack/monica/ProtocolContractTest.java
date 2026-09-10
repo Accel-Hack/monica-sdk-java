@@ -755,6 +755,16 @@ class ProtocolContractTest {
         warnings.get(0));
     assertTrue(warnings.get(0).contains("no further envelopes will be sent"), warnings.get(0));
 
+    // The wording is shared across the SDKs, so the code is always there: unknown when the
+    // rejection carried no body at all.
+    List<String> anonymous = new ArrayList<>();
+    try (Ingest ingest = Ingest.start(401)) {
+      assertFalse(transportFor(ingest, 3, anonymous::add).send(envelope));
+    }
+    assertEquals(1, anonymous.size());
+    assertEquals("monica: ingest rejected the envelope with 401 (unknown);"
+        + " no further envelopes will be sent", anonymous.get(0));
+
     // Every other rejection is a drop and nothing more: the next envelope still goes out.
     try (Ingest ingest = Ingest.start(400)) {
       JdkHttpTransport transport = transportFor(ingest, 3, MonicaDiagnostic.silent());
@@ -763,6 +773,33 @@ class ProtocolContractTest {
       assertFalse(transport.send(envelope));
       assertEquals(2, ingest.requests().size(), "a 400 must not stop later sends");
     }
+  }
+
+  @Test
+  void theClientBuilderRoutesTheDiagnosticToTheTransportItBuilds() throws Exception {
+    // The end-to-end path an application actually configures: a DSN, no transport of its own,
+    // and one option saying where the warning goes.
+    List<String> warnings = new ArrayList<>();
+    try (Ingest ingest = Ingest.start(422)) {
+      ingest.responseBody = ("{\"error\":{\"code\":\"invalid_envelope\",\"message\":\"no\","
+          + "\"issues\":[{\"path\":\"$.items[0].request.method\",\"message\":\"Required\"}]}}")
+          .getBytes(StandardCharsets.UTF_8);
+      try (MonicaClient client = MonicaClient.builder()
+          .dsn("http://msk_contract@127.0.0.1:" + ingest.port() + "/1")
+          .environment("contract")
+          .maxRetries(0)
+          .onDiagnostic(warnings::add)
+          .build()) {
+        assertNotNull(client.captureMessage("through the client builder"));
+        assertFalse(client.flush(Duration.ofSeconds(5)), "a 422 is not a successful flush");
+        assertEquals(OptionalInt.of(422), client.lastSendResult().getStatus());
+        assertEquals("$.items[0].request.method",
+            client.lastSendResult().getIssues().get(0).getPath());
+      }
+      assertEquals(1, ingest.requests().size(), "422 must not be retried");
+    }
+    assertEquals(1, warnings.size(), "the builder's diagnostic must receive the warning: " + warnings);
+    assertTrue(warnings.get(0).contains("$.items[0].request.method: Required"), warnings.get(0));
   }
 
   @Test

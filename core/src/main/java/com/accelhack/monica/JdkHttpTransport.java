@@ -124,19 +124,24 @@ public final class JdkHttpTransport implements MonicaTransport {
     boolean stop = status == 401;
     if (stop) stopped = true;
     if (status == 422) {
-      warn(rejectionMessage(status, error) + issueSummary(error.issues));
+      warn(rejectionMessage(status, error.code, false) + issueSummary(error.issues));
     } else if (stop) {
       // Going quiet for the rest of the process's life is worth one line: nothing else would
       // tell the application that MONICA has stopped accepting its events.
-      warn(rejectionMessage(status, error) + "; no further envelopes will be sent");
+      warn(rejectionMessage(status, error.code, true) + "; no further envelopes will be sent");
     }
     return SendResult.rejected(status, error.code, error.message, error.issues, stop);
   }
 
-  private static String rejectionMessage(int status, ErrorBody error) {
+  /**
+   * The wording is fixed across every MONICA SDK, so an operator who has read one of them can
+   * read them all. A 401 always names a code, {@code unknown} when the body did not carry one.
+   */
+  private static String rejectionMessage(int status, String code, boolean codeAlwaysShown) {
     StringBuilder text = new StringBuilder("monica: ingest rejected the envelope with ")
         .append(status);
-    if (error.code != null) text.append(" (").append(error.code).append(')');
+    if (code != null) text.append(" (").append(code).append(')');
+    else if (codeAlwaysShown) text.append(" (unknown)");
     return text.toString();
   }
 
