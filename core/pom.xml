@@ -38,14 +38,6 @@
         <configuration>
           <ignores>
             <ignore>java.net.http.*</ignore>
-            <!--
-              System.Logger is JDK 9 and Android has neither it nor System.getLogger. It is
-              used in exactly one place, JdkHttpTransport's default diagnostic sink, which is
-              part of the same server-only exception: monica-android supplies its own
-              transport and its own warning route, so nothing on Android loads that class.
-              java.lang.System has to be listed too because the undefined reference
-              animal-sniffer reports for System.getLogger is owned by java.lang.System.
-            -->
             <ignore>java.lang.System</ignore>
             <ignore>java.lang.System$Logger</ignore>
             <ignore>java.lang.System$Logger$Level</ignore>

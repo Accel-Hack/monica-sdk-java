@@ -67,34 +67,33 @@ CI の `公開契約` job は `--check-remote` で配信元の `revision` を取
 
 ### 拒否された envelope の扱い
 
-`422` は envelope 自身が schema 違反なので、リトライしても直らない。ingest は
-`error.json` の `issues` にどの field が悪いのかを返してくるため、`JdkHttpTransport` は
-レスポンス body を 64 KiB を上限に読み（status によらず読み切って stream を閉じる）、
-4xx（`429` を除く）を `error.json` として parse し、`422` のときは既定で警告を出す。
+4xx（`429` を除く）のレスポンス body を 64 KiB を上限に `error.json` として読み、
+`422` は既定で警告を 1 行出す。
 
 ```text
 monica: ingest rejected the envelope with 422 (invalid_envelope): 1 issue(s); $.items[0].request.method: Invalid type: Expected string
 ```
 
-出力先は `System.Logger`（logger 名 `com.accelhack.monica`、`WARNING`）。
-`MonicaClient.builder().onDiagnostic(...)` でアプリ側の logger へ差し替えられ、
-`MonicaDiagnostic.silent()` を渡すと止まる。`beforeSend` で event を組み直す運用では
-必須 field を落としても送信が黙って失敗し続けるため、既定でオフにはしない。
-`transport(...)` で自前の transport を渡した場合、`onDiagnostic` はそこには届かない。
-何をどこへ出すかはその transport が決めるので、transport 側で受け取る。
+| 事項 | 既定 / 指定方法 |
+| --- | --- |
+| 出力先 | `System.Logger`（logger 名 `com.accelhack.monica`、`WARNING`） |
+| 差し替え | `MonicaClient.builder().onDiagnostic(...)`（`MonicaOptions.Builder` にも同名） |
+| 無効化 | `onDiagnostic(MonicaDiagnostic.silent())` |
 
-プログラムから読むには `MonicaTransport.deliver()` の戻り値、または
-`MonicaClient.lastSendResult()` を使う。`SendResult` は HTTP status（network 失敗時は空）、
-`error.code` / `error.message`、`issues` の `path` / `message` を持つ。
+`transport(...)` で自前の transport を渡した場合、`onDiagnostic` は届かない。その transport で
+受け取る。
 
-`401`（`drop_and_stop`）を受けた transport は以後 ingest へ POST しない。
-`JdkHttpTransport.isStopped()`、または `SendResult.isStopped()` で判別できる。
+送信結果は `MonicaTransport.deliver()` の戻り値、または `MonicaClient.lastSendResult()` で読む。
+`SendResult` は HTTP status（network 失敗時は空）、`error.code` / `error.message`、
+`issues` の `path` / `message` を持つ。
+
+`401` を受けた transport は以後 ingest へ POST しない。`JdkHttpTransport.isStopped()` または
+`SendResult.isStopped()` で判別できる。鍵を入れ替えたら `MonicaClient` を作り直す。
 
 ### まだ実装していない契約
 
-`transport.json` の `status` のうち、`413`（`split_and_retry`）は分割せず破棄する。
-`MonicaClient` が送信前に JSON の byte 数を検査して envelope を分割しているので、
-ingest が `413` を返す状況を作らないことで代えている。
+- `transport.json` の `413`（`split_and_retry`）: 分割せず破棄する。`MonicaClient` が送信前に
+  JSON の byte 数（1,000,000 byte）を検査して envelope を分割する。
 
 黙って取り残されないように、契約テストは `transport.json` の section 名と status
 の語彙を固定している。MONICA 側が section や status を増やすと、
