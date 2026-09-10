@@ -102,10 +102,9 @@ monica: ingest rejected the envelope with 422 (invalid_envelope): 1 issue(s); $.
 ## 利用側の設定
 
 公開先は GitHub Packages（<https://github.com/Accel-Hack/monica-sdk-java/packages>）。
-Maven Central と違い、GitHub Packages は **public な package でも取得に認証を要求する**。
-加えてこの repository は private なので package も private になり、取得できるのは
-`Accel-Hack/monica-sdk-java` への read 権を持つ主体だけになる。よって利用側は
-repository の宣言と token の両方が要る。
+package は public なので誰でも取得できるが、Maven Central と違い **匿名では取得できない**。
+匿名 pull を許すのは Container registry だけで、Maven registry は public な package でも
+token を要求する。よって利用側は repository の宣言と token の両方が要る。
 
 ```xml
 <repositories>
@@ -116,8 +115,8 @@ repository の宣言と token の両方が要る。
 </repositories>
 ```
 
-`~/.m2/settings.xml` に `read:packages` を持つ personal access token を置く。
-`<id>` は上の `<repository>` の id と一致させる。
+手元から使う場合は `~/.m2/settings.xml` に `read:packages` を持つ personal access
+token を置く。`<id>` は上の `<repository>` の id と一致させる。
 
 ```xml
 <servers>
@@ -131,33 +130,34 @@ repository の宣言と token の両方が要る。
 
 ### 別 repository の GitHub Actions から取る場合
 
-**`secrets.GITHUB_TOKEN` では取れない。** GITHUB_TOKEN の権限はそれを実行している
-repository にしか及ばないので、`monica-sdk-android` のような別 repository の CI から
-この private package を読むことはできない（`permissions: packages: read` を足しても
-変わらない）。`Accel-Hack/monica-sdk-java` への read 権を持つ別の資格情報が要る。
-
-- `read:packages` を持つ classic personal access token。organization が SSO を
-  有効にしているなら、token に対して SSO を authorize しておく
-- または `Accel-Hack/monica-sdk-java` の contents / packages に read を持つ
-  GitHub App を install し、job 内で installation token を発行する
-
-どちらも利用側 repository の secret（例 `MONICA_PACKAGES_TOKEN`）に置き、
-`GITHUB_TOKEN` の代わりに password へ渡す。
+package が public なので、`monica-sdk-android` のような別 repository の CI でも、
+その repository 自身の `secrets.GITHUB_TOKEN` で取得できる。job に
+`permissions: packages: read` を与えるだけでよく、PAT を secret に置く必要はない。
 
 ```yaml
-- uses: actions/setup-java@v5
-  with:
-    distribution: temurin
-    java-version: "17"
-    server-id: github
-    server-username: MONICA_PACKAGES_ACTOR
-    server-password: MONICA_PACKAGES_TOKEN
+permissions:
+  contents: read
+  packages: read
 
-- run: mvn --batch-mode verify
-  env:
-    MONICA_PACKAGES_ACTOR: ${{ github.actor }}
-    MONICA_PACKAGES_TOKEN: ${{ secrets.MONICA_PACKAGES_TOKEN }}
+steps:
+  - uses: actions/setup-java@v5
+    with:
+      distribution: temurin
+      java-version: "17"
+      server-id: github
+      server-username: GITHUB_ACTOR
+      server-password: GITHUB_TOKEN
+
+  - run: mvn --batch-mode verify
+    env:
+      GITHUB_ACTOR: ${{ github.actor }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
+
+これが成り立つのは package が public だからで、private に戻すと別 repository の
+GITHUB_TOKEN では読めなくなる（その package に read を与えられた repository の
+workflow だけが取得できる）。その場合は `read:packages` を持つ PAT か GitHub App
+token を利用側の secret に置いて差し替える。
 
 Gradle から取る場合も同じで、`maven { url = ... ; credentials { ... } }` に同じ
 token を渡す。
