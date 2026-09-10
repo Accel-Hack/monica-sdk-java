@@ -39,9 +39,6 @@ INDEX_FILE = "index.json"
 # 配信元が落ちているときに CI が 10 分待たされないための上限
 TIMEOUT_SECONDS = 20
 
-# 平文を許す唯一の相手。手元に立てた複製から取り込むときに使う
-LOOPBACK_ORIGIN = re.compile(r"http://127\.0\.0\.1(:\d+)?")
-
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -51,12 +48,9 @@ class SyncError(Exception):
 
 def main(arguments):
     mode = "sync"
-    origin_override = None
     for argument in arguments:
         if argument in ("--check", "--check-remote"):
             mode = argument[2:]
-        elif argument.startswith("--origin="):
-            origin_override = argument[len("--origin="):]
         elif argument in ("--help", "-h"):
             usage()
             return 0
@@ -67,10 +61,9 @@ def main(arguments):
 
     try:
         lock = read_lock()
-        # 配信元の差し替えは手元で立てた複製から取り込むときに使う。lock に書かれた
-        # origin が既定で、上書きしても lock には書き戻さない（記録は本番の配信元のまま）。
-        origin = origin_override or os.environ.get("MONICA_SPEC_ORIGIN") or lock["origin"]
-        origin = origin.rstrip("/")
+        # 配信元は lock に書かれたものだけ。差し替える口を持たないので、この script が
+        # どこから取り込むかは repository の中身だけで決まる。
+        origin = lock["origin"].rstrip("/")
         require_https(origin)
 
         if mode == "check":
@@ -86,7 +79,7 @@ def main(arguments):
 
 def usage():
     sys.stdout.write(
-        "usage: python3 scripts/spec-sync.py [--check | --check-remote] [--origin=URL]\n"
+        "usage: python3 scripts/spec-sync.py [--check | --check-remote]\n"
         "  (no flag)       配信元から取り込み直し、spec/ と " + LOCK_FILE + " を書き換える\n"
         "  --check         spec/ が " + LOCK_FILE + " と一致するか。network を使わない\n"
         "  --check-remote  さらに配信元の revision が変わっていないか\n"
@@ -266,8 +259,8 @@ def fetch_index(origin, version):
     if not isinstance(index, dict) or not all(key in index for key in ("version", "revision", "files")):
         raise SyncError(url + ": version、revision、files のどれかがありません")
     # 索引の `base` は「このバンドルを生成した配信元」の記録で、取得先の設定では
-    # ない。mirror や手元に立てたものから取り込むと origin と食い違うのが正常な
-    # ので、検証には使わない。信じるのはこちらが設定した origin と各 digest。
+    # ない。CDN 越しなどで lock の origin と食い違うのが正常なので、検証には
+    # 使わない。信じるのは lock の origin と各 digest。
     if index["version"] != version:
         raise SyncError(
             url + ": 索引の version が " + json.dumps(index["version"]) + " で、要求した " + version + " と違います"
@@ -436,13 +429,9 @@ def read_bytes(path):
 
 
 def require_https(origin):
-    # 契約を平文で取ってくると、取り込んだ内容を誰でも差し替えられる。手元に立てた
-    # 複製から取り込むときだけ loopback を許すが、host は完全一致で見る。前方一致に
-    # すると http://127.0.0.1.example.com のような外部の host を通してしまい、
-    # 平文を禁じている意味がなくなる。
-    if origin.startswith("https://") or LOOPBACK_ORIGIN.fullmatch(origin):
-        return
-    raise SyncError("配信元は https にしてください: " + origin)
+    # 契約を平文で取ってくると、取り込んだ内容を誰でも差し替えられる。例外は作らない。
+    if not origin.startswith("https://"):
+        raise SyncError("配信元は https にしてください: " + origin)
 
 
 def report(label, paths):
