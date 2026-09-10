@@ -39,6 +39,9 @@ INDEX_FILE = "index.json"
 # 配信元が落ちているときに CI が 10 分待たされないための上限
 TIMEOUT_SECONDS = 20
 
+# 平文を許す唯一の相手。手元に立てた複製から取り込むときに使う
+LOOPBACK_ORIGIN = re.compile(r"http://127\.0\.0\.1(:\d+)?")
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -121,12 +124,15 @@ def sync(lock, origin):
             handle.write(contents)
         (added if before is None else changed).append(path)
 
-    removed = prune_mirror(lock["version"], list(fetched))
-
     was_revision = lock["revision"]
     lock["revision"] = index["revision"]
     lock["files"] = index["files"]
+    # prune より先に書く。索引に載っているものはもう手元にあるので、この時点で
+    # lock と spec/ の宣言は揃っている。あとから prune が落ちても余計なファイルが
+    # 残るだけで、もう一度この script を走らせれば直る。
     write_lock(lock)
+
+    removed = prune_mirror(lock["version"], list(fetched))
 
     print("spec-sync: %d ファイルを %s/%s から取り込んだ" % (len(fetched), origin, lock["version"]))
     if was_revision == index["revision"]:
@@ -148,7 +154,11 @@ def prune_mirror(version, declared):
     for path in mirror_files(version):
         if path in keep:
             continue
-        os.remove(mirror_path(version, path))
+        # mirror_path ではなく素で組み立てる。ここのパスは spec/<version>/ を
+        # 歩いて見つけたものなので中に収まっているのは自明で、逆に索引向けの
+        # require_safe_path をかけると .DS_Store のような手元のゴミ 1 つで
+        # 取り込み直しが落ちる（--check がそれを消せと言うのに消せなくなる）。
+        os.remove(existing_mirror_path(version, path))
         removed.append(path)
 
     # 深い側から畳まないと、親を消す時点でまだ子が残っている
@@ -397,7 +407,13 @@ def require_safe_path(path):
 
 
 def mirror_path(version, path):
+    """索引が持ち込んだパス。spec/ の外を指していないか確かめてから組み立てる。"""
     require_safe_path(path)
+    return existing_mirror_path(version, path)
+
+
+def existing_mirror_path(version, path):
+    """spec/<version>/ を歩いて見つけたパス。中にあることは分かっているので確かめない。"""
     return os.path.join(version_root(version), *path.split("/"))
 
 
@@ -420,9 +436,13 @@ def read_bytes(path):
 
 
 def require_https(origin):
-    # 契約を平文で取ってくると、取り込んだ内容を誰でも差し替えられる。
-    if not origin.startswith("https://") and not origin.startswith("http://127.0.0.1"):
-        raise SyncError("配信元は https にしてください: " + origin)
+    # 契約を平文で取ってくると、取り込んだ内容を誰でも差し替えられる。手元に立てた
+    # 複製から取り込むときだけ loopback を許すが、host は完全一致で見る。前方一致に
+    # すると http://127.0.0.1.example.com のような外部の host を通してしまい、
+    # 平文を禁じている意味がなくなる。
+    if origin.startswith("https://") or LOOPBACK_ORIGIN.fullmatch(origin):
+        return
+    raise SyncError("配信元は https にしてください: " + origin)
 
 
 def report(label, paths):
