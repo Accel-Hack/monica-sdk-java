@@ -30,10 +30,8 @@
   <!--
     公開先は GitHub Packages。registry が repository と 1 対 1 なので URL に owner/repo が入る。
     module ごとに URL を変えず、parent のこれを全 module が継承する。
-    Maven registry は public な package でも匿名取得を許さないので、利用側は read:packages を
-    持つ token（CI なら GITHUB_TOKEN で足りる可能性があるが未検証）を渡す必要がある
-    （README の「利用側の設定」を参照）。
     id は setup-java の server-id と揃える。ずれると deploy が 401 になる。
+    利用側の設定は README の「利用側の設定」を参照。
   -->
   <distributionManagement>
     <repository>

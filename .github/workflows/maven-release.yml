@@ -5,12 +5,11 @@ name: Maven release
 # repository が Maven の artifact しか出さないので、tag に maven- の prefix は付けない。
 #
 # 公開先が同じ repository の GitHub Packages なので、認証は自動で渡る GITHUB_TOKEN で
-# 足りる。公開のための secret は要らない。GPG 署名も GitHub Packages は要求しないので
-# 付けていない。
+# 足りる。公開のための secret は要らない。GPG 署名も要求されないので付けていない。
 #
-# GitHub Packages は同じ release version の再公開を 409 で拒否する。tag を打ち直しても
-# 上書きできないので、公開済みの版を直すときは patch version を上げる。deploy する
-# version は下の step が tag から作る release version で、SNAPSHOT は公開しない。
+# 同じ version は再公開できない（409 で落ちる）ので、公開済みの版を直すときは
+# patch version を上げる。deploy するのは下の step が tag から作る release version で、
+# SNAPSHOT は公開しない。
 on:
   push:
     tags:

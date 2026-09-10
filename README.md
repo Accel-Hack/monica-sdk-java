@@ -99,12 +99,13 @@ monica: ingest rejected the envelope with 422 (invalid_envelope): 1 issue(s); $.
 の語彙を固定している。MONICA 側が section や status を増やすと、
 「この SDK が考慮していない契約が増えた」として落ちる。
 
+
 ## 利用側の設定
 
 公開先は GitHub Packages（<https://github.com/Accel-Hack/monica-sdk-java/packages>）。
-package は public なので誰でも取得できるが、Maven Central と違い **匿名では取得できない**。
-匿名 pull を許すのは Container registry だけで、Maven registry は public な package でも
-token を要求する。よって利用側は repository の宣言と token の両方が要る。
+`0.1.0` は Maven Central にあるが、`0.1.1` 以降は GitHub Packages にしか出さない。
+
+Maven registry は匿名で取得できないので、repository の宣言と token の両方が要る。
 
 ```xml
 <repositories>
@@ -130,19 +131,10 @@ token を置く。`<id>` は上の `<repository>` の id と一致させる。
 
 ### 別 repository の GitHub Actions から取る場合
 
-public 化したので、`monica-sdk-android` のような別 repository の CI でも、その
-repository 自身の `secrets.GITHUB_TOKEN`（`permissions: packages: read`）で読める
-見込み。ただし **Maven registry についてはこれを明示した公式 doc がなく、未検証**。
-
-「package が public なら任意の repository の workflow が download できる」と書いて
-あるのは granular permissions に対応した registry の節で、Maven registry は
-repository-scoped permissions しか持たないため、この記述をそのまま当てはめられない。
-初回 publish 後に `monica-sdk-android` の CI で実地に確かめる。
-
-まず下の形で試す。
+job に `permissions: packages: read` を与えて、その repository の `GITHUB_TOKEN` を
+渡す。
 
 ```yaml
-# 要検証: この GITHUB_TOKEN だけで読めるかは初回 publish 後に確認する。
 permissions:
   contents: read
   packages: read
@@ -162,33 +154,12 @@ steps:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-401 / 403 で読めなかった場合は、`read:packages` を持つ PAT を利用側 repository の
-secret `MONICA_PACKAGES_TOKEN` に置き、`server-password` をそちらへ差し替える
-（`server-username` も token の所有者に合わせる）。package を private へ戻した
-場合も同じ差し替えが要る。
+これで 401 / 403 になる場合は、`read:packages` を持つ personal access token を
+利用側 repository の secret（例 `MONICA_PACKAGES_TOKEN`）に置いて、
+`server-username` と `server-password` をその token のものへ差し替える。
 
 Gradle から取る場合も同じで、`maven { url = ... ; credentials { ... } }` に同じ
 token を渡す。
-
-### Maven Central に残っているもの
-
-Central には 4 artifact とも `0.1.0` だけが上がっている（2026-08-30 公開）。これは
-分割前の monorepo `Accel-Hack/monica` から publish したもので、この repository は
-Central へ publish したことがない。以後も更新しない。
-
-| artifact | Central にある version |
-| --- | --- |
-| `monica-java-sdk`（parent pom） | `0.1.0` |
-| `monica-core` | `0.1.0` |
-| `monica-logback` | `0.1.0` |
-| `monica-spring-boot2-starter` | `0.1.0` |
-
-Central は artifact の削除を認めないので、`0.1.0` はこのまま残る。
-
-`0.1.1` 以降は GitHub Packages にしか出さない。**`0.1.1` はまだどこにも publish
-されていない**（ローカルの `~/.m2` に `mvn install` された分があるだけ）ので、
-`monica-core:0.1.1` を参照している利用側は、この repository へ `v0.1.1` tag を
-打って初回 publish が済むまで CI で解決できない。
 
 ## Release
 
@@ -196,18 +167,13 @@ Central は artifact の削除を認めないので、`0.1.0` はこのまま残
 は同じ版にする（契約テストが pom.xml と突き合わせる）。
 
 対応する main commit へ `vX.Y.Z` tag を付けると
-`.github/workflows/maven-release.yml` が動く。公開先が同じ repository の GitHub
-Packages なので、認証は workflow が自動で受け取る `GITHUB_TOKEN` で足りる。
-公開のための repository secret は要らない。
+`.github/workflows/maven-release.yml` が動く。認証は workflow が受け取る
+`GITHUB_TOKEN` で足りるので、公開のための repository secret は要らない。
 
 workflow は tag と POM version の対応を検証し、release version へ一時変換してから、
 parent pom と 3 module の jar を、それぞれの source / Javadoc jar とともに
 GitHub Packages へ公開する。
 
-GitHub Packages は**同じ version の再公開を拒否する**（release version は
-immutable で、409 で落ちる）。tag を打ち直しても同じ version では上書きできないので、
-公開済みの版を直すときは patch version を上げる。SNAPSHOT はこの制限の外で
-上書きできるが、この workflow は release version へ変換してから deploy するので
-SNAPSHOT を公開することはない。手元から `mvn deploy` すると POM の
-`X.Y.Z-SNAPSHOT` がそのまま GitHub Packages へ上がってしまうので、公開は
-tag 経由の workflow に任せる。
+同じ version は再公開できない（409 で落ちる）。公開済みの版を直すときは patch
+version を上げる。手元から `mvn deploy` すると POM の `X.Y.Z-SNAPSHOT` がそのまま
+上がってしまうので、公開は tag 経由の workflow に任せる。
