@@ -130,11 +130,19 @@ token を置く。`<id>` は上の `<repository>` の id と一致させる。
 
 ### 別 repository の GitHub Actions から取る場合
 
-package が public なので、`monica-sdk-android` のような別 repository の CI でも、
-その repository 自身の `secrets.GITHUB_TOKEN` で取得できる。job に
-`permissions: packages: read` を与えるだけでよく、PAT を secret に置く必要はない。
+public 化したので、`monica-sdk-android` のような別 repository の CI でも、その
+repository 自身の `secrets.GITHUB_TOKEN`（`permissions: packages: read`）で読める
+見込み。ただし **Maven registry についてはこれを明示した公式 doc がなく、未検証**。
+
+「package が public なら任意の repository の workflow が download できる」と書いて
+あるのは granular permissions に対応した registry の節で、Maven registry は
+repository-scoped permissions しか持たないため、この記述をそのまま当てはめられない。
+初回 publish 後に `monica-sdk-android` の CI で実地に確かめる。
+
+まず下の形で試す。
 
 ```yaml
+# 要検証: この GITHUB_TOKEN だけで読めるかは初回 publish 後に確認する。
 permissions:
   contents: read
   packages: read
@@ -154,10 +162,10 @@ steps:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-これが成り立つのは package が public だからで、private に戻すと別 repository の
-GITHUB_TOKEN では読めなくなる（その package に read を与えられた repository の
-workflow だけが取得できる）。その場合は `read:packages` を持つ PAT か GitHub App
-token を利用側の secret に置いて差し替える。
+401 / 403 で読めなかった場合は、`read:packages` を持つ PAT を利用側 repository の
+secret `MONICA_PACKAGES_TOKEN` に置き、`server-password` をそちらへ差し替える
+（`server-username` も token の所有者に合わせる）。package を private へ戻した
+場合も同じ差し替えが要る。
 
 Gradle から取る場合も同じで、`maven { url = ... ; credentials { ... } }` に同じ
 token を渡す。
