@@ -37,7 +37,13 @@ public final class SendResult {
     this.stopped = stopped;
   }
 
-  /** A result with no HTTP status: a network failure, or a legacy {@code send} return value. */
+  /**
+   * A result with no HTTP status: a network failure, or a legacy {@code send} return value.
+   *
+   * <p>Nothing cross-checks {@code accepted} against the status on these factories: a transport
+   * is the only thing that knows whether it counts a response as delivery, so keeping them
+   * consistent (2xx and accepted go together) is the caller's job.
+   */
   public static SendResult of(boolean accepted) {
     return accepted ? ACCEPTED : FAILED;
   }

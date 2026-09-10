@@ -69,7 +69,8 @@ CI の `公開契約` job は `--check-remote` で配信元の `revision` を取
 
 `422` は envelope 自身が schema 違反なので、リトライしても直らない。ingest は
 `error.json` の `issues` にどの field が悪いのかを返してくるため、`JdkHttpTransport` は
-4xx（`429` を除く）の body を 64 KiB を上限に読み、`422` のときは既定で警告を出す。
+レスポンス body を 64 KiB を上限に読み（status によらず読み切って stream を閉じる）、
+4xx（`429` を除く）を `error.json` として parse し、`422` のときは既定で警告を出す。
 
 ```text
 monica: ingest rejected the envelope with 422 (invalid_envelope): 1 issue(s); $.items[0].request.method: Invalid type: Expected string
@@ -79,6 +80,8 @@ monica: ingest rejected the envelope with 422 (invalid_envelope): 1 issue(s); $.
 `MonicaClient.builder().onDiagnostic(...)` でアプリ側の logger へ差し替えられ、
 `MonicaDiagnostic.silent()` を渡すと止まる。`beforeSend` で event を組み直す運用では
 必須 field を落としても送信が黙って失敗し続けるため、既定でオフにはしない。
+`transport(...)` で自前の transport を渡した場合、`onDiagnostic` はそこには届かない。
+何をどこへ出すかはその transport が決めるので、transport 側で受け取る。
 
 プログラムから読むには `MonicaTransport.deliver()` の戻り値、または
 `MonicaClient.lastSendResult()` を使う。`SendResult` は HTTP status（network 失敗時は空）、

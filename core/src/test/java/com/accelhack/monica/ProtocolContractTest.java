@@ -624,13 +624,10 @@ class ProtocolContractTest {
 
     assertEquals(1, warnings.size(), "one envelope must produce exactly one warning");
     String warning = warnings.get(0);
-    assertTrue(warning.startsWith("monica: ingest rejected the envelope with 422 (invalid_envelope)"),
-        "the warning must name the status and the code: " + warning);
-    assertTrue(warning.contains("1 issue(s)"), warning);
-    assertTrue(warning.contains("$.items[0].request.method: Invalid type: Expected string"),
-        "the path is the whole point of the warning: " + warning);
+    // The wording is fixed across every MONICA SDK, so it is pinned whole rather than probed.
+    assertEquals("monica: ingest rejected the envelope with 422 (invalid_envelope): 1 issue(s);"
+        + " $.items[0].request.method: Invalid type: Expected string", warning);
     assertFalse(warning.contains("msk_"), "a diagnostic must never carry the API key");
-    assertFalse(warning.contains("issues"), "the warning must not echo the envelope back");
   }
 
   @Test
@@ -693,23 +690,26 @@ class ProtocolContractTest {
     }
     oversized.append("{\"path\":\"$.items[0].level\",\"message\":\"Required\"}]}}");
 
-    Map<String, String> bodies = new LinkedHashMap<>();
-    bodies.put("an empty body", "");
-    bodies.put("whitespace", "   ");
-    bodies.put("plain text", "Unprocessable Entity");
-    bodies.put("truncated JSON", "{\"error\":{\"code\":\"invalid");
-    bodies.put("JSON that is not an object", "[1,2,3]");
-    bodies.put("an object without error", "{\"detail\":\"nope\"}");
-    bodies.put("issues that are not objects", "{\"error\":{\"code\":\"c\",\"message\":\"m\","
-        + "\"issues\":[\"$.items[0].message\"]}}");
-    bodies.put("issues without string path and message",
-        "{\"error\":{\"code\":\"c\",\"message\":\"m\",\"issues\":[{\"path\":1,\"message\":null}]}}");
-    bodies.put("a valid error.json past the 64 KiB cap", oversized.toString());
+    // body -> the code the warning must name; "unknown" wherever nothing readable came back.
+    Map<String, String[]> bodies = new LinkedHashMap<>();
+    bodies.put("an empty body", new String[] {"", "unknown"});
+    bodies.put("whitespace", new String[] {"   ", "unknown"});
+    bodies.put("plain text", new String[] {"Unprocessable Entity", "unknown"});
+    bodies.put("truncated JSON", new String[] {"{\"error\":{\"code\":\"invalid", "unknown"});
+    bodies.put("JSON that is not an object", new String[] {"[1,2,3]", "unknown"});
+    bodies.put("an object without error", new String[] {"{\"detail\":\"nope\"}", "unknown"});
+    bodies.put("issues that are not objects", new String[] {
+        "{\"error\":{\"code\":\"c\",\"message\":\"m\",\"issues\":[\"$.items[0].message\"]}}", "c"});
+    bodies.put("issues without string path and message", new String[] {
+        "{\"error\":{\"code\":\"c\",\"message\":\"m\",\"issues\":[{\"path\":1,\"message\":null}]}}",
+        "c"});
+    bodies.put("a valid error.json past the 64 KiB cap",
+        new String[] {oversized.toString(), "unknown"});
 
-    for (Map.Entry<String, String> body : bodies.entrySet()) {
+    for (Map.Entry<String, String[]> body : bodies.entrySet()) {
       List<String> warnings = new ArrayList<>();
       try (Ingest ingest = Ingest.start(422)) {
-        ingest.responseBody = body.getValue().getBytes(StandardCharsets.UTF_8);
+        ingest.responseBody = body.getValue()[0].getBytes(StandardCharsets.UTF_8);
         SendResult result = transportFor(ingest, 3, warnings::add).deliver(envelope);
         assertFalse(result.isAccepted(), body.getKey() + " must still be a drop");
         assertEquals(OptionalInt.of(422), result.getStatus(), body.getKey());
@@ -717,9 +717,11 @@ class ProtocolContractTest {
             body.getKey() + " must produce no issues rather than half-read ones");
         assertEquals(1, ingest.requests().size(), body.getKey() + " must not be retried");
       }
-      // A 422 with nothing readable in it still gets its one line: the drop itself is news.
+      // A 422 with nothing readable in it still gets its one line: the drop itself is news,
+      // and the code is always named so the line has one shape across every SDK.
       assertEquals(1, warnings.size(), body.getKey() + " -> " + warnings);
-      assertTrue(warnings.get(0).contains("0 issue(s)"), body.getKey() + " -> " + warnings.get(0));
+      assertEquals("monica: ingest rejected the envelope with 422 (" + body.getValue()[1]
+          + "): 0 issue(s)", warnings.get(0), body.getKey());
     }
   }
 

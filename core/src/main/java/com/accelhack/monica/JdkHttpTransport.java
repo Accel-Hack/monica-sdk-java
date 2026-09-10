@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.zip.GZIPOutputStream;
 
 public final class JdkHttpTransport implements MonicaTransport {
@@ -49,10 +50,11 @@ public final class JdkHttpTransport implements MonicaTransport {
   private final MonicaDiagnostic diagnostic;
   /**
    * {@code transport.json} answers {@code drop_and_stop} for {@code 401}: the key is wrong or
-   * revoked, so every later envelope would be rejected the same way. Written once, read on every
-   * send from whichever thread drains the queue.
+   * revoked, so every later envelope would be rejected the same way. Set once, read on every
+   * send from whichever thread drains the queue. Compare-and-set rather than a volatile write,
+   * so two threads that meet the same 401 in flight still warn only once.
    */
-  private volatile boolean stopped;
+  private final AtomicBoolean stopped = new AtomicBoolean();
 
   public JdkHttpTransport(String dsn, int maxRetries, Duration requestTimeout) {
     this(dsn, maxRetries, requestTimeout, null);
@@ -78,7 +80,7 @@ public final class JdkHttpTransport implements MonicaTransport {
 
   @Override
   public SendResult deliver(MonicaEnvelope envelope) throws Exception {
-    if (stopped) return SendResult.rejected(401, null, null, null, true);
+    if (stopped.get()) return SendResult.rejected(401, null, null, null, true);
     byte[] body = gzip(mapper.writeValueAsBytes(envelope));
     for (int attempt = 0; attempt <= maxRetries; attempt++) {
       try {
@@ -112,7 +114,7 @@ public final class JdkHttpTransport implements MonicaTransport {
 
   /** True once a {@code 401} has closed this transport; it no longer posts anything. */
   public boolean isStopped() {
-    return stopped;
+    return stopped.get();
   }
 
   /**
@@ -122,27 +124,26 @@ public final class JdkHttpTransport implements MonicaTransport {
   private SendResult rejected(int status, byte[] payload) {
     ErrorBody error = ErrorBody.parse(mapper, payload);
     boolean stop = status == 401;
-    if (stop) stopped = true;
+    boolean firstStop = stop && stopped.compareAndSet(false, true);
     if (status == 422) {
-      warn(rejectionMessage(status, error.code, false) + issueSummary(error.issues));
-    } else if (stop) {
+      warn(rejectionMessage(status, error.code) + issueSummary(error.issues));
+    } else if (firstStop) {
       // Going quiet for the rest of the process's life is worth one line: nothing else would
-      // tell the application that MONICA has stopped accepting its events.
-      warn(rejectionMessage(status, error.code, true) + "; no further envelopes will be sent");
+      // tell the application that MONICA has stopped accepting its events. Only the 401 that
+      // actually stopped the transport says it, so concurrent sends do not repeat it.
+      warn(rejectionMessage(status, error.code) + "; no further envelopes will be sent");
     }
     return SendResult.rejected(status, error.code, error.message, error.issues, stop);
   }
 
   /**
    * The wording is fixed across every MONICA SDK, so an operator who has read one of them can
-   * read them all. A 401 always names a code, {@code unknown} when the body did not carry one.
+   * read them all: the code is always in the message, {@code unknown} when the response body
+   * did not carry one.
    */
-  private static String rejectionMessage(int status, String code, boolean codeAlwaysShown) {
-    StringBuilder text = new StringBuilder("monica: ingest rejected the envelope with ")
-        .append(status);
-    if (code != null) text.append(" (").append(code).append(')');
-    else if (codeAlwaysShown) text.append(" (unknown)");
-    return text.toString();
+  private static String rejectionMessage(int status, String code) {
+    return "monica: ingest rejected the envelope with " + status
+        + " (" + (code != null ? code : "unknown") + ")";
   }
 
   private static String issueSummary(List<SendResult.Issue> issues) {

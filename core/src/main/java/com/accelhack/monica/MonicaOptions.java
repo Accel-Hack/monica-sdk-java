@@ -202,6 +202,10 @@ public final class MonicaOptions {
      * Where a rejected envelope is reported. A {@code 422} names the fields ingest refused, and
      * only the application can fix them, so the warning is on by default.
      *
+     * <p>Only the transport this SDK builds from the DSN reports through it. A transport
+     * supplied with {@link #transport(MonicaTransport)} decides for itself what it reports and
+     * where, so it has to take the diagnostic itself.
+     *
      * @param diagnostic {@code null} restores the default sink ({@code System.Logger} at
      *     {@code WARNING} on {@code com.accelhack.monica});
      *     {@link MonicaDiagnostic#silent()} turns the warning off.
