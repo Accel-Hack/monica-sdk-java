@@ -36,6 +36,7 @@ public final class MonicaOptions {
   final Duration flushTimeout;
   final double sampleRate;
   final MonicaTransport transport;
+  final MonicaDiagnostic diagnostic;
   final Supplier<Instant> clock;
   final Supplier<Double> random;
 
@@ -58,8 +59,9 @@ public final class MonicaOptions {
       throw new IllegalArgumentException("sampleRate must be between 0 and 1");
     }
     sampleRate = builder.sampleRate;
+    diagnostic = builder.diagnostic;
     transport = builder.transport != null ? builder.transport : new JdkHttpTransport(
-        requireText(builder.dsn, "dsn"), builder.maxRetries, builder.requestTimeout);
+        requireText(builder.dsn, "dsn"), builder.maxRetries, builder.requestTimeout, diagnostic);
     clock = Objects.requireNonNull(builder.clock, "clock");
     random = Objects.requireNonNull(builder.random, "random");
   }
@@ -111,6 +113,7 @@ public final class MonicaOptions {
     private Duration flushTimeout = DEFAULT_FLUSH_TIMEOUT;
     private double sampleRate = 1;
     private MonicaTransport transport;
+    private MonicaDiagnostic diagnostic;
     private Supplier<Instant> clock = Instant::now;
     private Supplier<Double> random = new Random()::nextDouble;
     private int maxRetries = 5;
@@ -192,6 +195,19 @@ public final class MonicaOptions {
 
     public Builder transport(MonicaTransport transport) {
       this.transport = transport;
+      return this;
+    }
+
+    /**
+     * Where a rejected envelope is reported. A {@code 422} names the fields ingest refused, and
+     * only the application can fix them, so the warning is on by default.
+     *
+     * @param diagnostic {@code null} restores the default sink ({@code System.Logger} at
+     *     {@code WARNING} on {@code com.accelhack.monica});
+     *     {@link MonicaDiagnostic#silent()} turns the warning off.
+     */
+    public Builder onDiagnostic(MonicaDiagnostic diagnostic) {
+      this.diagnostic = diagnostic;
       return this;
     }
 

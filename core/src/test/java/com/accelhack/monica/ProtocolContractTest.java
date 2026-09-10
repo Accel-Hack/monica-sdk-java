@@ -35,8 +35,12 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.TreeMap;
 import java.util.function.Consumer;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -204,9 +208,9 @@ class ProtocolContractTest {
 
   @Test
   void theErrorBodyShapeIsStillUsable() throws Exception {
-    // error.json is the shape of a rejection. This SDK branches on the HTTP status only and
-    // never reads the body, so what is pinned here is the schema being usable and the two
-    // fields a future consumer will need, not conformance the SDK does not yet have.
+    // error.json is the shape of a rejection, and JdkHttpTransport now reads it: the two
+    // fields pinned here are the ones SendResult.Issue is built out of, so a change to the
+    // schema arrives as a failure here rather than as silently empty issues.
     assertEquals("https://spec.monica.accelhack.net/v1/error.json", errorSchema.pointer("/$id").asText(),
         "error.json must still be the v1 error schema");
     assertEquals(Arrays.asList("path", "message"), textValues(errorSchema.pointer("/$defs/validationIssue/required")),
@@ -455,9 +459,9 @@ class ProtocolContractTest {
     assertEquals("drop", transportSpec.at("/status/422").asText());
     assertEquals("wait_retry_after", transportSpec.at("/status/429").asText());
     assertEquals("backoff", transportSpec.at("/status/5xx").asText());
-    // Known gaps, kept visible: 401 is dropped but does not stop later sends, and 413 is
-    // dropped instead of split (the JSON preflight in MonicaClient keeps envelopes under
-    // the limit so ingest should not answer 413 in the first place).
+    // 401 is drop_and_stop and this SDK stops (see a401StopsEveryLaterSend). The one gap
+    // kept visible: 413 is dropped instead of split, because the JSON preflight in
+    // MonicaClient keeps envelopes under the limit so ingest should not answer 413 at all.
     assertEquals("drop_and_stop", transportSpec.at("/status/401").asText());
     assertEquals("split_and_retry", transportSpec.at("/status/413").asText());
 
@@ -560,10 +564,16 @@ class ProtocolContractTest {
     MonicaEnvelope envelope = envelopeFor(client -> client.captureMessage("status"));
     // drop: no retry, so exactly one request reaches the server
     for (int status : new int[] {400, 401, 413, 422}) {
+      List<String> warnings = new ArrayList<>();
       try (Ingest ingest = Ingest.start(status)) {
-        assertFalse(transportFor(ingest, 3).send(envelope), status + " must not be reported as accepted");
+        assertFalse(transportFor(ingest, 3, warnings::add).send(envelope),
+            status + " must not be reported as accepted");
         assertEquals(1, ingest.requests().size(), status + " must not be retried");
       }
+      // Only the two statuses an application can act on are worth a warning: 422 names the
+      // fields to fix, 401 says MONICA has gone quiet for good.
+      assertEquals(status == 400 || status == 413 ? 0 : 1, warnings.size(),
+          status + " produced the wrong number of warnings: " + warnings);
     }
     // wait_retry_after / backoff: retried, and the retry that meets a 202 succeeds
     try (Ingest ingest = Ingest.start(429, 202)) {
@@ -580,6 +590,220 @@ class ProtocolContractTest {
       ingest.retryAfterSeconds = 0;
       assertFalse(transportFor(ingest, 2).send(envelope));
       assertEquals(3, ingest.requests().size(), "maxRetries bounds the number of attempts");
+    }
+  }
+
+  @Test
+  void aRejectedEnvelopeCarriesTheIssuesIngestReported() throws Exception {
+    // ingest.md: a 422 is dropped, and the SDK is expected to read error.issues so the payload
+    // can be fixed. Both halves of that are checked here: the warning an operator reads, and
+    // the result the application can branch on.
+    MonicaEnvelope envelope = envelopeFor(client -> client.captureMessage("issues"));
+    String body = "{\"error\":{\"code\":\"invalid_envelope\","
+        + "\"message\":\"The envelope does not match the MONICA schema\",\"issues\":[{"
+        + "\"path\":\"$.items[0].request.method\","
+        + "\"message\":\"Invalid type: Expected string\"}]}}";
+    assertEquals(List.of(), errorSchema.validate(MAPPER.readTree(body)),
+        "this test is only worth anything if the stub answers a valid error.json");
+
+    List<String> warnings = new ArrayList<>();
+    try (Ingest ingest = Ingest.start(422)) {
+      ingest.responseBody = body.getBytes(StandardCharsets.UTF_8);
+      SendResult result = transportFor(ingest, 3, warnings::add).deliver(envelope);
+
+      assertFalse(result.isAccepted(), "a 422 is a drop");
+      assertEquals(OptionalInt.of(422), result.getStatus(), "the status must reach the caller");
+      assertEquals("invalid_envelope", result.getErrorCode());
+      assertEquals("The envelope does not match the MONICA schema", result.getErrorMessage());
+      assertEquals(1, result.getIssues().size(), "the issue ingest reported must reach the caller");
+      assertEquals("$.items[0].request.method", result.getIssues().get(0).getPath());
+      assertEquals("Invalid type: Expected string", result.getIssues().get(0).getMessage());
+      assertFalse(result.isStopped(), "a 422 is the payload's fault, not the key's");
+      assertEquals(1, ingest.requests().size(), "422 must not be retried");
+    }
+
+    assertEquals(1, warnings.size(), "one envelope must produce exactly one warning");
+    String warning = warnings.get(0);
+    assertTrue(warning.startsWith("monica: ingest rejected the envelope with 422 (invalid_envelope)"),
+        "the warning must name the status and the code: " + warning);
+    assertTrue(warning.contains("1 issue(s)"), warning);
+    assertTrue(warning.contains("$.items[0].request.method: Invalid type: Expected string"),
+        "the path is the whole point of the warning: " + warning);
+    assertFalse(warning.contains("msk_"), "a diagnostic must never carry the API key");
+    assertFalse(warning.contains("issues"), "the warning must not echo the envelope back");
+  }
+
+  @Test
+  void theDefaultDiagnosticGoesToTheJdksWarningRoute() throws Exception {
+    // The warning is on by default, on the platform's standard route: System.Logger at
+    // WARNING under com.accelhack.monica, which a plain JDK hands to java.util.logging.
+    MonicaEnvelope envelope = envelopeFor(client -> client.captureMessage("default sink"));
+    List<String> logged = new ArrayList<>();
+    java.util.logging.Logger jul = java.util.logging.Logger.getLogger(JdkHttpTransport.LOGGER_NAME);
+    Handler capture = new Handler() {
+      @Override
+      public void publish(LogRecord record) {
+        if (record.getLevel().intValue() >= Level.WARNING.intValue()) logged.add(record.getMessage());
+      }
+
+      @Override
+      public void flush() {
+      }
+
+      @Override
+      public void close() {
+      }
+    };
+    jul.addHandler(capture);
+    try (Ingest ingest = Ingest.start(422)) {
+      ingest.responseBody = ("{\"error\":{\"code\":\"invalid_envelope\",\"message\":\"no\","
+          + "\"issues\":[{\"path\":\"$.items[0].platform\",\"message\":\"Required\"}]}}")
+          .getBytes(StandardCharsets.UTF_8);
+      // No onDiagnostic: this is what an application that configured nothing gets.
+      assertFalse(transportFor(ingest, 0).send(envelope));
+    } finally {
+      jul.removeHandler(capture);
+    }
+    assertEquals(1, logged.size(), "the default sink must warn without being asked to: " + logged);
+    assertTrue(logged.get(0).contains("$.items[0].platform: Required"), logged.get(0));
+
+    // ...and one option turns it off again.
+    try (Ingest ingest = Ingest.start(422)) {
+      ingest.responseBody = "{\"error\":{\"code\":\"invalid_envelope\",\"message\":\"no\"}}"
+          .getBytes(StandardCharsets.UTF_8);
+      jul.addHandler(capture);
+      try {
+        assertFalse(transportFor(ingest, 0, MonicaDiagnostic.silent()).send(envelope));
+      } finally {
+        jul.removeHandler(capture);
+      }
+    }
+    assertEquals(1, logged.size(), "MonicaDiagnostic.silent() must silence the warning: " + logged);
+  }
+
+  @Test
+  void aRejectionBodyThatIsNotErrorJsonIsDroppedWithoutThrowing() throws Exception {
+    // Nothing about a malformed rejection body may reach the application as an exception: the
+    // envelope is lost either way, and MONICA must not be the reason the host process fails.
+    MonicaEnvelope envelope = envelopeFor(client -> client.captureMessage("malformed"));
+    StringBuilder oversized = new StringBuilder("{\"error\":{\"code\":\"invalid_envelope\","
+        + "\"message\":\"no\",\"issues\":[");
+    while (oversized.length() <= JdkHttpTransport.MAX_ERROR_BODY_BYTES) {
+      oversized.append("{\"path\":\"$.items[0].message\",\"message\":\"Required\"},");
+    }
+    oversized.append("{\"path\":\"$.items[0].level\",\"message\":\"Required\"}]}}");
+
+    Map<String, String> bodies = new LinkedHashMap<>();
+    bodies.put("an empty body", "");
+    bodies.put("whitespace", "   ");
+    bodies.put("plain text", "Unprocessable Entity");
+    bodies.put("truncated JSON", "{\"error\":{\"code\":\"invalid");
+    bodies.put("JSON that is not an object", "[1,2,3]");
+    bodies.put("an object without error", "{\"detail\":\"nope\"}");
+    bodies.put("issues that are not objects", "{\"error\":{\"code\":\"c\",\"message\":\"m\","
+        + "\"issues\":[\"$.items[0].message\"]}}");
+    bodies.put("issues without string path and message",
+        "{\"error\":{\"code\":\"c\",\"message\":\"m\",\"issues\":[{\"path\":1,\"message\":null}]}}");
+    bodies.put("a valid error.json past the 64 KiB cap", oversized.toString());
+
+    for (Map.Entry<String, String> body : bodies.entrySet()) {
+      List<String> warnings = new ArrayList<>();
+      try (Ingest ingest = Ingest.start(422)) {
+        ingest.responseBody = body.getValue().getBytes(StandardCharsets.UTF_8);
+        SendResult result = transportFor(ingest, 3, warnings::add).deliver(envelope);
+        assertFalse(result.isAccepted(), body.getKey() + " must still be a drop");
+        assertEquals(OptionalInt.of(422), result.getStatus(), body.getKey());
+        assertEquals(List.of(), result.getIssues(),
+            body.getKey() + " must produce no issues rather than half-read ones");
+        assertEquals(1, ingest.requests().size(), body.getKey() + " must not be retried");
+      }
+      // A 422 with nothing readable in it still gets its one line: the drop itself is news.
+      assertEquals(1, warnings.size(), body.getKey() + " -> " + warnings);
+      assertTrue(warnings.get(0).contains("0 issue(s)"), body.getKey() + " -> " + warnings.get(0));
+    }
+  }
+
+  @Test
+  void a401StopsEveryLaterSend() throws Exception {
+    // transport.json says drop_and_stop. A revoked key answers 401 for every envelope, so
+    // going on would spend the application's time and MONICA's capacity on nothing.
+    MonicaEnvelope envelope = envelopeFor(client -> client.captureMessage("stop"));
+    List<String> warnings = new ArrayList<>();
+    try (Ingest ingest = Ingest.start(401)) {
+      ingest.responseBody = "{\"error\":{\"code\":\"invalid_key\",\"message\":\"Unauthorized\"}}"
+          .getBytes(StandardCharsets.UTF_8);
+      JdkHttpTransport transport = transportFor(ingest, 3, warnings::add);
+      SendResult first = transport.deliver(envelope);
+      assertFalse(first.isAccepted());
+      assertEquals(OptionalInt.of(401), first.getStatus());
+      assertEquals("invalid_key", first.getErrorCode());
+      assertTrue(first.isStopped(), "a 401 must report the transport as stopped");
+      assertTrue(transport.isStopped(), "the transport must say it has stopped");
+      assertEquals(1, ingest.requests().size(), "401 must not be retried");
+
+      SendResult second = transport.deliver(envelope);
+      assertFalse(second.isAccepted());
+      assertTrue(second.isStopped());
+      assertEquals(OptionalInt.of(401), second.getStatus(),
+          "a stopped transport keeps answering the status that stopped it");
+      assertFalse(transport.send(envelope), "the boolean path must stay stopped too");
+      assertEquals(1, ingest.requests().size(),
+          "nothing may be posted to ingest after a 401");
+    }
+    assertEquals(1, warnings.size(), "the short-circuited sends must not warn again: " + warnings);
+    assertTrue(warnings.get(0).contains("401") && warnings.get(0).contains("invalid_key"),
+        warnings.get(0));
+    assertTrue(warnings.get(0).contains("no further envelopes will be sent"), warnings.get(0));
+
+    // Every other rejection is a drop and nothing more: the next envelope still goes out.
+    try (Ingest ingest = Ingest.start(400)) {
+      JdkHttpTransport transport = transportFor(ingest, 3, MonicaDiagnostic.silent());
+      assertFalse(transport.deliver(envelope).isStopped(), "a 400 must not stop the transport");
+      assertFalse(transport.isStopped());
+      assertFalse(transport.send(envelope));
+      assertEquals(2, ingest.requests().size(), "a 400 must not stop later sends");
+    }
+  }
+
+  @Test
+  void theClientHandsTheRejectionBackToTheApplication() {
+    // flush() answers a boolean, so the issues have to be reachable some other way.
+    SendResult rejection = SendResult.rejected(422, "invalid_envelope", "no",
+        List.of(new SendResult.Issue("$.items[0].request.method", "Invalid type")), false);
+    try (MonicaClient client = MonicaClient.builder()
+        .environment("contract")
+        .transport(new MonicaTransport() {
+          @Override
+          public boolean send(MonicaEnvelope envelope) {
+            return deliver(envelope).isAccepted();
+          }
+
+          @Override
+          public SendResult deliver(MonicaEnvelope envelope) {
+            return rejection;
+          }
+        })
+        .build()) {
+      assertNotNull(client.captureMessage("rejected"));
+      assertFalse(client.flush(Duration.ofSeconds(5)), "a rejected envelope is not a success");
+      SendResult result = client.lastSendResult();
+      assertNotNull(result, "the client must keep what ingest answered");
+      assertEquals(OptionalInt.of(422), result.getStatus());
+      assertEquals("$.items[0].request.method", result.getIssues().get(0).getPath());
+    }
+
+    // A transport written against monica-core 0.1.1 implements send() and nothing else. It
+    // must keep compiling and running, with the default deliver() reporting what it can.
+    try (MonicaClient legacy = MonicaClient.builder()
+        .environment("contract")
+        .transport(envelope -> false)
+        .build()) {
+      assertNotNull(legacy.captureMessage("legacy transport"));
+      assertFalse(legacy.flush(Duration.ofSeconds(5)));
+      assertFalse(legacy.lastSendResult().isAccepted());
+      assertEquals(OptionalInt.empty(), legacy.lastSendResult().getStatus(),
+          "a boolean-only transport has no status to report");
+      assertEquals(List.of(), legacy.lastSendResult().getIssues());
     }
   }
 
@@ -709,6 +933,12 @@ class ProtocolContractTest {
         Duration.ofSeconds(5));
   }
 
+  private static JdkHttpTransport transportFor(Ingest ingest, int maxRetries,
+      MonicaDiagnostic diagnostic) {
+    return new JdkHttpTransport("http://msk_contract@127.0.0.1:" + ingest.port() + "/1", maxRetries,
+        Duration.ofSeconds(5), diagnostic);
+  }
+
   private static Map<String, JsonNode> authSchemes() {
     Map<String, JsonNode> schemes = new HashMap<>();
     for (JsonNode scheme : transportSpec.get("auth")) schemes.put(scheme.get("kind").asText(), scheme);
@@ -821,6 +1051,8 @@ class ProtocolContractTest {
     private final Deque<Integer> statuses;
     private final List<Request> requests = Collections.synchronizedList(new ArrayList<>());
     volatile int retryAfterSeconds = -1;
+    /** The response body, for the statuses that carry an error.json. */
+    volatile byte[] responseBody;
 
     private Ingest(HttpServer server, int... statuses) {
       this.server = server;
@@ -851,7 +1083,19 @@ class ProtocolContractTest {
         status = statuses.size() > 1 ? statuses.poll() : statuses.peek();
       }
       if (retryAfterSeconds >= 0) exchange.getResponseHeaders().add("Retry-After", String.valueOf(retryAfterSeconds));
-      exchange.sendResponseHeaders(status, -1);
+      byte[] payload = responseBody;
+      if (payload == null) {
+        exchange.sendResponseHeaders(status, -1);
+      } else {
+        exchange.getResponseHeaders().add("Content-Type", "application/json");
+        exchange.sendResponseHeaders(status, payload.length);
+        try {
+          exchange.getResponseBody().write(payload);
+        } catch (IOException hungUp) {
+          // A transport that stops reading at its cap closes the stream mid-body. That is the
+          // behaviour under test, not a failure of the stub.
+        }
+      }
       exchange.close();
     }
 
