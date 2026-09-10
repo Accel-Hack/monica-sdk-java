@@ -6,7 +6,7 @@
   <parent>
     <groupId>com.accelhack.monica</groupId>
     <artifactId>monica-java-sdk</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.1-SNAPSHOT</version>
   </parent>
   <artifactId>monica-logback</artifactId>
   <name>MONICA Logback</name>

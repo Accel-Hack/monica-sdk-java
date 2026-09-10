@@ -9,6 +9,9 @@ import java.util.Map;
 import java.util.Set;
 
 public final class ThrowableConverter {
+  /** The frame limit ingest puts on one stacktrace; the oldest callers are dropped first. */
+  static final int MAX_FRAMES = 200;
+
   private ThrowableConverter() {}
 
   public static Map<String, Object> convert(Throwable throwable, Iterable<String> inAppPackages,
@@ -46,8 +49,8 @@ public final class ThrowableConverter {
       frame.put("in_app", isInApp(element.getClassName(), inAppPackages));
       frames.add(frame);
     }
-    return frames.size() <= 200 ? frames : new ArrayList<>(frames.subList(frames.size() - 200,
-        frames.size()));
+    return frames.size() <= MAX_FRAMES ? frames
+        : new ArrayList<>(frames.subList(frames.size() - MAX_FRAMES, frames.size()));
   }
 
   static String sourcePath(StackTraceElement element) {
