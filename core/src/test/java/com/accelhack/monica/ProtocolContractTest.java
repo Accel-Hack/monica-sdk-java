@@ -447,7 +447,7 @@ class ProtocolContractTest {
     transportSpec.fieldNames().forEachRemaining(declared::add);
     Collections.sort(declared);
     assertEquals(Arrays.asList("auth", "dsn", "endpoint", "retry", "status"), declared,
-        "transport.json declares sections this SDK has not considered (see README for what is unimplemented)");
+        "transport.json declares sections this SDK has not considered");
 
     List<String> statuses = new ArrayList<>();
     transportSpec.get("status").fieldNames().forEachRemaining(statuses::add);

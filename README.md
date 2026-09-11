@@ -60,6 +60,8 @@ byte 順に改行で繋いだ文字列の sha256）で、版番号ではない�
 
 4 は `ingest.md` の散文から定数を写すのではなく、`transport.json` を読んで
 `JdkHttpTransport` の定数と突き合わせる。MONICA 側が endpoint やヘッダを変えると、ここが落ちる。
+契約テストは `transport.json` の section 名と status の語彙も固定しているので、MONICA 側が
+section や status を増やしたときも「この SDK が考慮していない契約が増えた」として落ちる。
 
 CI の `公開契約` job は `--check-remote` で配信元の `revision` を取り込み済みのものと
 比べる。落ちたら `python3 scripts/spec-sync.py` で取り込み直し、`mvn verify` を
@@ -90,20 +92,9 @@ monica: ingest rejected the envelope with 422 (invalid_envelope): 1 issue(s); $.
 `401` を受けた transport は以後 ingest へ POST しない。`JdkHttpTransport.isStopped()` または
 `SendResult.isStopped()` で判別できる。鍵を入れ替えたら `MonicaClient` を作り直す。
 
-### まだ実装していない契約
-
-- `transport.json` の `413`（`split_and_retry`）: 分割せず破棄する。`MonicaClient` が送信前に
-  JSON の byte 数（1,000,000 byte）を検査して envelope を分割する。
-
-黙って取り残されないように、契約テストは `transport.json` の section 名と status
-の語彙を固定している。MONICA 側が section や status を増やすと、
-「この SDK が考慮していない契約が増えた」として落ちる。
-
-
 ## 利用側の設定
 
 公開先は GitHub Packages（<https://github.com/Accel-Hack/monica-sdk-java/packages>）。
-`0.1.0` は Maven Central にあるが、`0.1.1` 以降は GitHub Packages にしか出さない。
 
 Maven registry は匿名で取得できないので、repository の宣言と token の両方が要る。
 
@@ -116,18 +107,26 @@ Maven registry は匿名で取得できないので、repository の宣言と to
 </repositories>
 ```
 
-手元から使う場合は `~/.m2/settings.xml` に `read:packages` を持つ personal access
-token を置く。`<id>` は上の `<repository>` の id と一致させる。
+手元から使う場合は `gh` の token をそのまま渡す。`~/.m2/settings.xml` には実値を書かず、
+環境変数から読ませる。`<id>` は上の `<repository>` の id と一致させる。
 
 ```xml
 <servers>
   <server>
     <id>github</id>
-    <username>GITHUB_USERNAME</username>
-    <password>ghp_...</password>
+    <username>${env.GITHUB_ACTOR}</username>
+    <password>${env.GITHUB_TOKEN}</password>
   </server>
 </servers>
 ```
+
+```sh
+export GITHUB_ACTOR="$(gh api user --jq .login)"
+export GITHUB_TOKEN="$(gh auth token)"
+```
+
+401 になるのは token に `read:packages` が無いとき。`gh auth refresh -h github.com -s read:packages`
+で足してから取り直す。
 
 ### 別 repository の GitHub Actions から取る場合
 
@@ -153,10 +152,6 @@ steps:
       GITHUB_ACTOR: ${{ github.actor }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
-
-これで 401 / 403 になる場合は、`read:packages` を持つ personal access token を
-利用側 repository の secret（例 `MONICA_PACKAGES_TOKEN`）に置いて、
-`server-username` と `server-password` をその token のものへ差し替える。
 
 Gradle から取る場合も同じで、`maven { url = ... ; credentials { ... } }` に同じ
 token を渡す。
