@@ -4,7 +4,7 @@ Spring Boot 2 アプリケーションへ MONICA を組み込む auto-configurat
 
 ## 対応環境
 
-Spring Boot 2.6 以上（build 検証は 2.6.15）/ Spring Framework 5 / `javax.servlet`、Java 11 以上。
+Spring Boot 2 系（検証は 2.6.15）/ Spring Framework 5 / `javax.servlet`、Java 11 以上。
 `monica-core` と `monica-logback` を推移的に持ってくる。
 
 ## インストール
@@ -72,9 +72,14 @@ auto-configuration が入れるもの:
 - `@Scheduled` task の例外 capture（tag `integration=spring_scheduled`）。capture 後も Spring 既定の
   ERROR log と繰り返し抑制はそのまま残る
 - Logback root logger への appender 登録（`monica.logback.enabled=false` で止める）
-- context 停止時の flush（`monica.flush-timeout` まで待つ）
-- Actuator の health indicator `monica`（`queued` / `discarded` を出す。host の稼働を優先するため常に UP）
+- context 停止時に `MonicaClient` を close（`monica.flush-timeout` まで flush を待つ）
+- Actuator の health indicator `monica`（`queued` / `discarded` を出す。常に UP）
 - 疎通確認用の `MonicaTestService` bean（`sendTestEvent()` が `info` event を 1 件送って flush する）
+
+MVC の capture と request scope は servlet の Spring MVC アプリケーションのとき、appender は
+Logback が SLF4J の binding のとき、health indicator は Actuator が classpath にあるときだけ入る。
+`@Scheduled` の capture は Spring Boot が作る `TaskScheduler` へ error handler を
+差し込む形なので、`TaskScheduler` や `SchedulingConfigurer` を自分で定義している場合は入らない。
 
 `BeforeSend` bean を定義すると auto-configured client に適用される。`MonicaClient` bean を自分で
 定義した場合は、そちらが使われる。
@@ -82,8 +87,10 @@ auto-configuration が入れるもの:
 ## オプション
 
 properties の一覧と既定値は [ルート README のオプション](../README.md#オプション)。
-`max-breadcrumbs` / `max-retries` / `request-timeout` / `transport` / `on-diagnostic` / appender の
-`threshold` は properties に無いので、変えるときは `MonicaClient` bean を自分で定義する。
+`max-breadcrumbs` / `max-retries` / `request-timeout` / `transport` / `on-diagnostic` は properties に
+無いので、変えるときは `MonicaClient` bean を自分で定義する。appender の `threshold` も properties に
+無く、starter は既定（`ERROR`）で登録する。変えるときは `monica.logback.enabled=false` にして
+`MonicaAppender` を自分で登録する。
 
 ## 自動で収集するもの
 

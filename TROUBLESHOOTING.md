@@ -87,7 +87,8 @@ if (result != null && !result.isAccepted()) {
 
 ## よくある原因と対処
 
-**`MonicaClient.builder().build()` が `IllegalArgumentException` を投げる**
+**`MonicaClient.builder()` が `IllegalArgumentException` を投げる**（`maxRetries` だけは setter、
+残りは `build()` で出る）
 
 | message | 原因 |
 | --- | --- |

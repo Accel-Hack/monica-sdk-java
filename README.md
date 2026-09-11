@@ -8,8 +8,8 @@ core・Logback appender・Spring Boot 2 starter の 3 artifact を提供する�
 | ディレクトリ | artifact | 用途・要求環境 |
 | --- | --- | --- |
 | [`core/`](core/README.md) | `com.accelhack.monica:monica-core` | framework 非依存の client。Java 11+ |
-| [`logback/`](logback/README.md) | `com.accelhack.monica:monica-logback` | Logback appender。Java 11+ / Logback 1.2+（build 検証は 1.2.13） |
-| [`spring-boot2-starter/`](spring-boot2-starter/README.md) | `com.accelhack.monica:monica-spring-boot2-starter` | Spring Boot 2 auto-configuration。Spring Boot 2.6+（build 検証は 2.6.15）/ `javax.servlet` |
+| [`logback/`](logback/README.md) | `com.accelhack.monica:monica-logback` | Logback appender。Java 11+ / Logback（検証は 1.2.13） |
+| [`spring-boot2-starter/`](spring-boot2-starter/README.md) | `com.accelhack.monica:monica-spring-boot2-starter` | Spring Boot 2 auto-configuration。Spring Boot 2 系（検証は 2.6.15）/ `javax.servlet` |
 
 Android アプリ向けの `monica-android` は別 repository（`Accel-Hack/monica-sdk-android`）にある。
 
@@ -207,9 +207,14 @@ auto-configuration が入れるもの:
 - request ごとの scope（`request` context に HTTP method と route template）
 - `@Scheduled` task の例外 capture（tag `integration=spring_scheduled`）。capture 後も Spring 既定の ERROR log は残る
 - Logback root logger への appender 登録（`monica.logback.enabled=false` で止める）
-- context 停止時の flush（`monica.flush-timeout` まで待つ）
+- context 停止時に `MonicaClient` を close（`monica.flush-timeout` まで flush を待つ）
 - Actuator の health indicator `monica`（`queued` / `discarded` を出す。常に UP）
 - 疎通確認用の `MonicaTestService` bean（`sendTestEvent()` が `info` event を 1 件送って flush する）
+
+MVC の capture と request scope は servlet の Spring MVC アプリケーションのとき、appender は
+Logback が SLF4J の binding のとき、health indicator は Actuator が classpath にあるときだけ入る。
+`@Scheduled` の capture は Spring Boot が作る `TaskScheduler` へ error handler を
+差し込む形なので、`TaskScheduler` や `SchedulingConfigurer` を自分で定義している場合は入らない。
 
 `BeforeSend` bean を定義すると auto-configuration の client に適用される。`MonicaClient` bean を
 自分で定義した場合は、そちらが優先される。
@@ -257,8 +262,10 @@ auto-configuration が入れるもの:
 | `monica.logback.capture-messages` | `boolean` | `false` |
 | `monica.logback.allowed-mdc-keys` | `List<String>` | 空 |
 
-`maxBreadcrumbs` / `maxRetries` / `requestTimeout` / `transport` / `onDiagnostic` / appender の
-`threshold` は properties に無い。変えるときは `MonicaClient` bean を自分で定義する。
+`maxBreadcrumbs` / `maxRetries` / `requestTimeout` / `transport` / `onDiagnostic` は properties に
+無い。変えるときは `MonicaClient` bean を自分で定義する。appender の `threshold` も properties に
+無く、starter は既定（`ERROR`）で登録する。変えるときは `monica.logback.enabled=false` にして
+`MonicaAppender` を自分で登録する。
 
 ## 自動で収集するもの
 
@@ -269,7 +276,8 @@ auto-configuration が入れるもの:
 `lineno`、`in_app`）と `mechanism.handled`。frame は throw 地点に近い 200 件までで、古い呼び出し元から落とす。
 
 Logback appender: tag `logger` と `log_level`、context `logback` の thread 名。MDC は
-`allowedMdcKeys` に挙げた key だけ。log の formatted argument は送らない。
+`allowedMdcKeys` に挙げた key だけ。message は `{}` を置換する前の log pattern で、formatted
+argument は送らない。
 
 Spring Boot starter: HTTP method と Spring MVC の route template（`/orders/{id}` 形式）。
 生の URL・query string・header・request body は収集しない。MVC と `@Scheduled` の capture には

@@ -4,7 +4,7 @@ Logback の log event を `monica-core` の queue へ渡す appender。
 
 ## 対応環境
 
-Java 11 以上、Logback 1.2 以上（build 検証は 1.2.13）。`logback-classic` は optional 依存なので、
+Java 11 以上、Logback（検証は 1.2.13）。`logback-classic` は optional 依存なので、
 アプリケーション側の版が使われる。
 
 ## インストール
@@ -53,7 +53,8 @@ log の level は event の level に写す（`ERROR`→`error`、`WARN`→`warn
 ## 自動で収集するもの
 
 tag `logger`（logger 名）と `log_level`、context `logback` の `thread`（thread 名）、
-`allowedMdcKeys` に挙げた MDC。log の formatted argument は送らない。
+`allowedMdcKeys` に挙げた MDC。event の message は `{}` を置換する前の log pattern で、
+formatted argument は送らない。
 logger 名が `com.accelhack.monica` で始まる event は、SDK 自身の警告が送り返されないよう無視する。
 
 ## ライセンス
