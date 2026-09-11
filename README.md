@@ -116,17 +116,29 @@ Maven registry は匿名で取得できないので、repository の宣言と to
 </repositories>
 ```
 
-手元から使う場合は `~/.m2/settings.xml` に `read:packages` を持つ personal access
-token を置く。`<id>` は上の `<repository>` の id と一致させる。
+手元から使う場合は credential を `gh` から借りる。**token を発行して置く方法は採らない。**
+`~/.m2/settings.xml` には environment variable 名だけを書く。`<id>` は上の
+`<repository>` の id と一致させる。
 
 ```xml
 <servers>
   <server>
     <id>github</id>
-    <username>GITHUB_USERNAME</username>
-    <password>ghp_...</password>
+    <username>${env.MONICA_PACKAGES_ACTOR}</username>
+    <password>${env.MONICA_PACKAGES_TOKEN}</password>
   </server>
 </servers>
+```
+
+値は build のたびに env から渡す。`gh auth token` に `read:packages` が要るので、
+401 で取れないときは権限を足す。
+
+```bash
+gh auth refresh -s read:packages   # 権限が無いときだけ
+
+export MONICA_PACKAGES_ACTOR="$(gh api user --jq .login)"
+export MONICA_PACKAGES_TOKEN="$(gh auth token)"
+mvn verify
 ```
 
 ### 別 repository の GitHub Actions から取る場合
@@ -154,12 +166,14 @@ steps:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-これで 401 / 403 になる場合は、`read:packages` を持つ personal access token を
-利用側 repository の secret（例 `MONICA_PACKAGES_TOKEN`）に置いて、
-`server-username` と `server-password` をその token のものへ差し替える。
+これで 401 / 403 になる場合は、**token を発行して利用側の secret に置くのではなく、
+package 側から利用側 repository へ read を渡す。**
+<https://github.com/orgs/Accel-Hack/packages> の `monica-core` → Package settings →
+Manage Actions access → 利用側 repository を Read で追加する。相手の `GITHUB_TOKEN`
+がそのまま通るようになる。
 
-Gradle から取る場合も同じで、`maven { url = ... ; credentials { ... } }` に同じ
-token を渡す。
+Gradle から取る場合も同じで、`maven { url = ... ; credentials { ... } }` へ
+`GITHUB_ACTOR` と `GITHUB_TOKEN` を渡す。
 
 ## Release
 
