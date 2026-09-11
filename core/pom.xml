@@ -38,6 +38,9 @@
         <configuration>
           <ignores>
             <ignore>java.net.http.*</ignore>
+            <ignore>java.lang.System</ignore>
+            <ignore>java.lang.System$Logger</ignore>
+            <ignore>java.lang.System$Logger$Level</ignore>
           </ignores>
         </configuration>
       </plugin>

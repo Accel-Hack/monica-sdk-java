@@ -65,12 +65,35 @@ CI の `公開契約` job は `--check-remote` で配信元の `revision` を取
 比べる。落ちたら `python3 scripts/spec-sync.py` で取り込み直し、`mvn verify` を
 通してから commit する。
 
+### 拒否された envelope の扱い
+
+4xx（`429` を除く）のレスポンス body を 64 KiB を上限に `error.json` として読み、
+`422` は既定で警告を 1 行出す。
+
+```text
+monica: ingest rejected the envelope with 422 (invalid_envelope): 1 issue(s); $.items[0].request.method: Invalid type: Expected string
+```
+
+| 事項 | 既定 / 指定方法 |
+| --- | --- |
+| 出力先 | `System.Logger`（logger 名 `com.accelhack.monica`、`WARNING`） |
+| 差し替え | `MonicaClient.builder().onDiagnostic(...)`（`MonicaOptions.Builder` にも同名） |
+| 無効化 | `onDiagnostic(MonicaDiagnostic.silent())` |
+
+`transport(...)` で自前の transport を渡した場合、`onDiagnostic` は届かない。その transport で
+受け取る。
+
+送信結果は `MonicaTransport.deliver()` の戻り値、または `MonicaClient.lastSendResult()` で読む。
+`SendResult` は HTTP status（network 失敗時は空）、`error.code` / `error.message`、
+`issues` の `path` / `message` を持つ。
+
+`401` を受けた transport は以後 ingest へ POST しない。`JdkHttpTransport.isStopped()` または
+`SendResult.isStopped()` で判別できる。鍵を入れ替えたら `MonicaClient` を作り直す。
+
 ### まだ実装していない契約
 
-`transport.json` の `status` のうち、`401`（`drop_and_stop`）は破棄するだけで以後の
-送信を止めない。`413`（`split_and_retry`）は分割せず破棄する。`MonicaClient` が
-送信前に JSON の byte 数を検査して envelope を分割しているので、ingest が `413` を
-返す状況を作らないことで代えている。`error.json` の body は読んでいない。
+- `transport.json` の `413`（`split_and_retry`）: 分割せず破棄する。`MonicaClient` が送信前に
+  JSON の byte 数（1,000,000 byte）を検査して envelope を分割する。
 
 黙って取り残されないように、契約テストは `transport.json` の section 名と status
 の語彙を固定している。MONICA 側が section や status を増やすと、

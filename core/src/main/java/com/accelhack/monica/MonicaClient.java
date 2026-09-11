@@ -42,6 +42,7 @@ public final class MonicaClient implements AutoCloseable {
   private final ThreadLocal<Deque<Scope>> scopes = ThreadLocal.withInitial(ArrayDeque::new);
   private long discarded;
   private volatile boolean closed;
+  private volatile SendResult lastSendResult;
 
   private MonicaClient(MonicaOptions options) {
     this.options = options;
@@ -138,6 +139,19 @@ public final class MonicaClient implements AutoCloseable {
     }
   }
 
+  /**
+   * What ingest answered for the envelope sent most recently, or {@code null} before anything
+   * has been sent.
+   *
+   * <p>{@link #flush()} answers a {@code boolean} and cannot say why a send failed. This can:
+   * {@code getStatus()} and {@code getIssues()} carry the HTTP status and the field-level
+   * problems a {@code 422} reported, and {@code isStopped()} says a {@code 401} has closed the
+   * transport for good.
+   */
+  public SendResult lastSendResult() {
+    return lastSendResult;
+  }
+
   public MonicaStats stats() {
     synchronized (lock) {
       return new MonicaStats(queue.size(), discarded);
@@ -230,12 +244,16 @@ public final class MonicaClient implements AutoCloseable {
       List<MonicaEvent> items = new ArrayList<>(batch.subList(0, count));
       MonicaEnvelope envelope = new MonicaEnvelope(options.sdkName, options.sdkVersion,
           sentAt, pendingDiscarded, items);
-      boolean accepted;
+      SendResult result;
       try {
-        accepted = options.transport.send(envelope);
+        // deliver, not send: a rejection's status and the issues a 422 lists are the only way
+        // an application learns that its own payload is what ingest is refusing.
+        result = options.transport.deliver(envelope);
       } catch (Throwable ignored) {
-        accepted = false;
+        result = SendResult.of(false);
       }
+      lastSendResult = result == null ? SendResult.of(false) : result;
+      boolean accepted = lastSendResult.isAccepted();
       if (!accepted) {
         synchronized (lock) {
           discarded += pendingDiscarded + batch.size();
@@ -362,6 +380,7 @@ public final class MonicaClient implements AutoCloseable {
     public Builder flushTimeout(Duration value) { options.flushTimeout(value); return this; }
     public Builder sampleRate(double value) { options.sampleRate(value); return this; }
     public Builder transport(MonicaTransport value) { options.transport(value); return this; }
+    public Builder onDiagnostic(MonicaDiagnostic value) { options.onDiagnostic(value); return this; }
     public Builder maxRetries(int value) { options.maxRetries(value); return this; }
     public Builder requestTimeout(Duration value) { options.requestTimeout(value); return this; }
 
