@@ -27,6 +27,25 @@
     <tag>HEAD</tag>
   </scm>
 
+  <!--
+    公開先は GitHub Packages。registry が repository と 1 対 1 なので URL に owner/repo が入る。
+    module ごとに URL を変えず、parent のこれを全 module が継承する。
+    id は setup-java の server-id と揃える。ずれると deploy が 401 になる。
+    利用側の設定は README の「利用側の設定」を参照。
+  -->
+  <distributionManagement>
+    <repository>
+      <id>github</id>
+      <name>GitHub Packages</name>
+      <url>https://maven.pkg.github.com/Accel-Hack/monica-sdk-java</url>
+    </repository>
+    <snapshotRepository>
+      <id>github</id>
+      <name>GitHub Packages</name>
+      <url>https://maven.pkg.github.com/Accel-Hack/monica-sdk-java</url>
+    </snapshotRepository>
+  </distributionManagement>
+
   <modules>
     <module>core</module>
     <module>logback</module>
@@ -162,45 +181,4 @@
     </pluginManagement>
   </build>
 
-  <profiles>
-    <profile>
-      <id>central-release</id>
-      <build>
-        <plugins>
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-gpg-plugin</artifactId>
-            <version>3.2.8</version>
-            <executions>
-              <execution>
-                <id>sign-artifacts</id>
-                <phase>verify</phase>
-                <goals>
-                  <goal>sign</goal>
-                </goals>
-                <configuration>
-                  <bestPractices>true</bestPractices>
-                  <gpgArguments>
-                    <arg>--pinentry-mode</arg>
-                    <arg>loopback</arg>
-                  </gpgArguments>
-                </configuration>
-              </execution>
-            </executions>
-          </plugin>
-          <plugin>
-            <groupId>org.sonatype.central</groupId>
-            <artifactId>central-publishing-maven-plugin</artifactId>
-            <version>0.9.0</version>
-            <extensions>true</extensions>
-            <configuration>
-              <publishingServerId>central</publishingServerId>
-              <autoPublish>true</autoPublish>
-              <checksums>all</checksums>
-            </configuration>
-          </plugin>
-        </plugins>
-      </build>
-    </profile>
-  </profiles>
 </project>

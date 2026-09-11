@@ -99,14 +99,81 @@ monica: ingest rejected the envelope with 422 (invalid_envelope): 1 issue(s); $.
 の語彙を固定している。MONICA 側が section や status を増やすと、
 「この SDK が考慮していない契約が増えた」として落ちる。
 
+
+## 利用側の設定
+
+公開先は GitHub Packages（<https://github.com/Accel-Hack/monica-sdk-java/packages>）。
+`0.1.0` は Maven Central にあるが、`0.1.1` 以降は GitHub Packages にしか出さない。
+
+Maven registry は匿名で取得できないので、repository の宣言と token の両方が要る。
+
+```xml
+<repositories>
+  <repository>
+    <id>github</id>
+    <url>https://maven.pkg.github.com/Accel-Hack/monica-sdk-java</url>
+  </repository>
+</repositories>
+```
+
+手元から使う場合は `~/.m2/settings.xml` に `read:packages` を持つ personal access
+token を置く。`<id>` は上の `<repository>` の id と一致させる。
+
+```xml
+<servers>
+  <server>
+    <id>github</id>
+    <username>GITHUB_USERNAME</username>
+    <password>ghp_...</password>
+  </server>
+</servers>
+```
+
+### 別 repository の GitHub Actions から取る場合
+
+job に `permissions: packages: read` を与えて、その repository の `GITHUB_TOKEN` を
+渡す。
+
+```yaml
+permissions:
+  contents: read
+  packages: read
+
+steps:
+  - uses: actions/setup-java@v5
+    with:
+      distribution: temurin
+      java-version: "17"
+      server-id: github
+      server-username: GITHUB_ACTOR
+      server-password: GITHUB_TOKEN
+
+  - run: mvn --batch-mode verify
+    env:
+      GITHUB_ACTOR: ${{ github.actor }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+これで 401 / 403 になる場合は、`read:packages` を持つ personal access token を
+利用側 repository の secret（例 `MONICA_PACKAGES_TOKEN`）に置いて、
+`server-username` と `server-password` をその token のものへ差し替える。
+
+Gradle から取る場合も同じで、`maven { url = ... ; credentials { ... } }` に同じ
+token を渡す。
+
 ## Release
 
 開発中の POM は `X.Y.Z-SNAPSHOT` にする。`core` の `MonicaOptions.DEFAULT_SDK_VERSION`
 は同じ版にする（契約テストが pom.xml と突き合わせる）。
 
-4 個の repository secret `MAVEN_CENTRAL_USERNAME`、`MAVEN_CENTRAL_TOKEN`、
-`MAVEN_GPG_PRIVATE_KEY`、`MAVEN_GPG_PASSPHRASE` を設定し、対応する main commit へ
-`vX.Y.Z` tag を付けると `.github/workflows/maven-release.yml` が動く。
+対応する main commit へ `vX.Y.Z` tag を付けると
+`.github/workflows/maven-release.yml` が動く。認証は workflow が受け取る
+`GITHUB_TOKEN` で足りるので、公開のための repository secret は要らない。
 
 workflow は tag と POM version の対応を検証し、release version へ一時変換してから、
-source / Javadoc jar と GPG signature を含む 3 artifact を Maven Central へ公開する。
+parent pom と 3 module の jar を、それぞれの source / Javadoc jar とともに
+GitHub Packages へ公開する。
+
+同じ version は再公開できない（409 で落ちる）。公開済みの版を直すときは patch
+version を上げる。手元から `mvn deploy` すると POM の `X.Y.Z-SNAPSHOT` がそのまま
+上がってしまうので、公開は tag 経由の workflow に任せる。
