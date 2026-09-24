@@ -310,28 +310,28 @@ public final class MonicaClient implements AutoCloseable {
   }
 
   /**
-   * True when {@code throwable} or any of its causes was captured within the last second.
-   * Integrations report one failure several times within milliseconds: an application log,
-   * the MVC resolver, then the container's log of the wrapping {@code ServletException}.
-   * The window keeps repeats of a reused instance (HotSpot's preallocated stackless NPE under
-   * OmitStackTraceInFastThrow, a cached exception) from being dropped for good. Only the
-   * captured instance is remembered, so capturing a cause after its wrapper still sends.
+   * True when {@code throwable} is, or is a cause of, a throwable captured within the last second.
+   * Integrations report one failure several times within milliseconds: an application log, the
+   * MVC resolver with the same instance, then the container's log of the root cause. A throwable
+   * that wraps a captured one is still sent: it carries the caller's frames that the earlier,
+   * inner event (e.g. a connection pool's own log) lacks. The window keeps repeats of a reused
+   * instance (HotSpot's preallocated stackless NPE under OmitStackTraceInFastThrow, a cached
+   * exception) from being dropped for good.
    */
   private boolean capturedBeforeLocked(Throwable throwable) {
     long now = nowMillis();
-    Set<Throwable> recent = Collections.newSetFromMap(new IdentityHashMap<>());
+    Set<Throwable> covered = Collections.newSetFromMap(new IdentityHashMap<>());
     for (Iterator<SeenThrowable> iterator = seenThrowables.iterator(); iterator.hasNext();) {
       SeenThrowable seen = iterator.next();
       Throwable candidate = seen.throwable.get();
-      if (candidate == null || now - seen.seenAt > DEDUPLICATION_WINDOW_MILLIS) iterator.remove();
-      else recent.add(candidate);
+      if (candidate == null || now - seen.seenAt > DEDUPLICATION_WINDOW_MILLIS) {
+        iterator.remove();
+        continue;
+      }
+      // add() returning false stops at a cycle or a tail another chain already covered.
+      for (Throwable t = candidate; t != null && covered.add(t); t = t.getCause()) {}
     }
-    if (recent.isEmpty()) return false;
-    Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
-    for (Throwable t = throwable; t != null && visited.add(t); t = t.getCause()) {
-      if (recent.contains(t)) return true;
-    }
-    return false;
+    return covered.contains(throwable);
   }
 
   private long nowMillis() {

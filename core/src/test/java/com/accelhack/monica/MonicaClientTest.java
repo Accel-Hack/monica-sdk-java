@@ -118,17 +118,18 @@ class MonicaClientTest {
   }
 
   @Test
-  void skipsAThrowableWhoseCauseWasAlreadyCaptured() {
+  void stillSendsAThrowableThatWrapsACapturedOne() {
     MonicaClient client = MonicaClient.builder()
         .environment("test")
         .transport(envelope -> true)
         .build();
-    Throwable root = new IllegalArgumentException("logged by the application");
-    Throwable wrapper = new RuntimeException("rethrown by the container",
+    // A connection pool logs its own failure, then the application logs the wrapped exception.
+    Throwable root = new IllegalArgumentException("logged by the pool");
+    Throwable wrapper = new RuntimeException("logged by the application",
         new IllegalStateException("middle", root));
 
     assertNotNull(client.captureException(root));
-    assertNull(client.captureException(wrapper));
+    assertNotNull(client.captureException(wrapper));
     client.close();
   }
 
@@ -152,16 +153,17 @@ class MonicaClientTest {
   }
 
   @Test
-  void stillSendsACauseCapturedAfterItsWrapper() {
+  void skipsACauseCapturedAfterItsWrapper() {
     MonicaClient client = MonicaClient.builder()
         .environment("test")
         .transport(envelope -> true)
         .build();
+    // The container logs only the root cause after the application and the resolver reported it.
     Throwable root = new IllegalArgumentException("root");
-    Throwable wrapper = new RuntimeException("wrapper", root);
+    Throwable wrapper = new RuntimeException("wrapper", new IllegalStateException("middle", root));
 
     assertNotNull(client.captureException(wrapper));
-    assertNotNull(client.captureException(root));
+    assertNull(client.captureException(root));
     client.close();
   }
 
