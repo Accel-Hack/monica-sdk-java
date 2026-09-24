@@ -7,7 +7,10 @@ import com.accelhack.monica.MonicaClient;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.autoconfigure.task.TaskSchedulingAutoConfiguration;
+import org.springframework.boot.task.TaskSchedulerCustomizer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 
 class MonicaAutoConfigurationTest {
   private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
@@ -36,6 +39,31 @@ class MonicaAutoConfigurationTest {
         "monica.enabled=false",
         "monica.dsn=https://msk_test@localhost:9876/project")
         .run(context -> assertThat(context).doesNotHaveBean(MonicaClient.class));
+  }
+
+  @Test
+  void treatsBlankDsnAsUnset() {
+    WebApplicationContextRunner fullStarter = new WebApplicationContextRunner()
+        .withConfiguration(AutoConfigurations.of(
+            MonicaAutoConfiguration.class,
+            MonicaWebAutoConfiguration.class,
+            MonicaSchedulingAutoConfiguration.class,
+            MonicaLogbackAutoConfiguration.class,
+            MonicaHealthAutoConfiguration.class,
+            TaskSchedulingAutoConfiguration.class));
+    for (String dsn : new String[] {"", "  "}) {
+      fullStarter.withPropertyValues("monica.dsn=" + dsn).run(context -> {
+        assertThat(context).hasNotFailed();
+        assertThat(context).doesNotHaveBean(MonicaClient.class);
+        assertThat(context).doesNotHaveBean(MonicaLifecycle.class);
+        assertThat(context).doesNotHaveBean(MonicaTestService.class);
+        assertThat(context).doesNotHaveBean(MonicaLogbackRegistration.class);
+        assertThat(context).doesNotHaveBean(MonicaExceptionResolver.class);
+        assertThat(context).doesNotHaveBean(MonicaRequestScopeFilter.class);
+        assertThat(context).doesNotHaveBean(TaskSchedulerCustomizer.class);
+        assertThat(context).doesNotHaveBean("monicaHealthIndicator");
+      });
+    }
   }
 
   @Test

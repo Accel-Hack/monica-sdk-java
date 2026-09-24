@@ -186,7 +186,8 @@ Spring Boot 2 starter を使う場合は、この登録を starter が行う。
 ### Spring Boot 2 starter
 
 `monica.dsn` を設定すると `MonicaClient` bean が作られ、auto-configuration が有効になる。
-`monica.dsn` が無いときは client を作らないので、何も起きない。
+`monica.dsn` が無いとき（`${MONICA_DSN:}` が空文字に展開された場合を含め、空白だけの値も同じ）は
+client を作らないので、何も起きない。
 
 ```yaml
 monica:
