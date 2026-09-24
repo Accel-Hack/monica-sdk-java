@@ -19,6 +19,7 @@ import org.springframework.util.StringUtils;
 @EnableConfigurationProperties(MonicaProperties.class)
 @ConditionalOnProperty(prefix = "monica", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class MonicaAutoConfiguration {
+  // Closed by MonicaLifecycle, which can defer the close until a startup failure is reported.
   @Bean(destroyMethod = "")
   @ConditionalOnMissingBean
   @Conditional(OnDsnCondition.class)
@@ -42,8 +43,8 @@ public class MonicaAutoConfiguration {
 
   @Bean
   @ConditionalOnBean(MonicaClient.class)
-  public MonicaLifecycle monicaLifecycle(MonicaClient client, MonicaProperties properties) {
-    return new MonicaLifecycle(client, properties.getFlushTimeout());
+  public static MonicaLifecycle monicaLifecycle() {
+    return new MonicaLifecycle();
   }
 
   @Bean

@@ -108,7 +108,7 @@ if (result != null && !result.isAccepted()) {
 - プロセスが終わる前に `flush(...)` か `close(...)` を呼んでいない。queue に残った event は失われる。
 - `sampleRate` が 1 未満。
 - `beforeSend` が `null` を返している。
-- 同じ `Throwable` instance を 1 秒以内に 2 回 capture している（2 件目は落ちる）。
+- 1 秒以内に capture した `Throwable` instance、またはその cause の連鎖に含まれる例外を capture している（落ちる）。
 - `401` で送信が止まっている（`lastSendResult().isStopped()`）。
 - Logback appender: 既定は `ERROR` 以上かつ Throwable 付きの log だけ。Throwable の無い log も
   送るなら `captureMessages` を有効にする。

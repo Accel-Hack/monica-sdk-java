@@ -209,6 +209,7 @@ auto-configuration が入れるもの:
 - `@Scheduled` task の例外 capture（tag `integration=spring_scheduled`）。capture 後も Spring 既定の ERROR log は残る
 - Logback root logger への appender 登録（`monica.logback.enabled=false` で止める）
 - context 停止時に `MonicaClient` を close（`monica.flush-timeout` まで flush を待つ）
+- `SpringApplication` の起動失敗の capture（level `fatal`、tag `integration=spring_boot_startup`）
 - Actuator の health indicator `monica`（`queued` / `discarded` を出す。常に UP）
 - 疎通確認用の `MonicaTestService` bean（`sendTestEvent()` が `info` event を 1 件送って flush する）
 
@@ -308,7 +309,9 @@ tag・context・breadcrumb も、アプリケーションが入れたものだ�
 - 1 envelope は item 100 件まで、JSON 1,000,000 byte まで。超える batch は送信前に分割し、
   単体で超える event は破棄して `discarded` に数える。
 - `413` を受けた envelope は分割再送せず破棄する（`transport.json` の `split_and_retry` は未実装）。
-- 同じ `Throwable` instance を 1 秒以内に再 capture しても 1 件しか送らない。
+- 1 秒以内に capture した `Throwable` instance と、その原因の連鎖に含まれる例外は送らない（app の
+  log・MVC・container の root cause の log が同じ失敗を報告しても 1 件になる）。capture 済みの
+  例外を包む例外は送る。
 - `401` を受けた後、その client は ingest へ POST しない。鍵を入れ替えたら `MonicaClient` を作り直す。
 - capture は queue へ積むだけで、送信失敗を呼び出し元へ伝えない。プロセス終了前に `flush()` か
   `close()` を呼ばないと queue に残った event は失われる。
