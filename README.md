@@ -32,12 +32,16 @@ Maven registry は匿名で取得できないので、repository の宣言と to
   <dependency>
     <groupId>com.accelhack.monica</groupId>
     <artifactId>monica-spring-boot2-starter</artifactId>
-    <version>0.1.1</version>
+    <version>0.2.0</version>
   </dependency>
 </dependencies>
 ```
 
 Spring を使わない場合は `monica-core`（必要なら `monica-logback`）を同じ座標で指定する。
+
+GitHub Packages の Maven registry は、同じ owner の package ならその owner 配下のどの
+repository URL からでも返す。Accel-Hack の repository を既に宣言していれば、上の
+`<repository>` は足さなくてよい。
 
 credential は `~/.m2/settings.xml` に environment variable 名だけを書く。`<id>` は
 `<repository>` の id と一致させる。
@@ -64,7 +68,8 @@ mvn verify
 
 ### GitHub Actions から取る場合
 
-job に `packages: read` を与え、その repository の `GITHUB_TOKEN` を渡す。
+job に `packages: read` を与え、その repository の `GITHUB_TOKEN` を渡す。package は public
+なので、Accel-Hack 以外の organization の repository でも personal access token は要らない。
 
 ```yaml
 permissions:
@@ -241,7 +246,7 @@ Logback が SLF4J の binding のとき、health indicator は Actuator が clas
 | `sampleRate` | `double` | `1` | 0〜1。event ごとに判定する |
 | `maxRetries` | `int` | `5` | 再送回数（`429` / `5xx` / network 失敗のみ） |
 | `requestTimeout` | `Duration` | `2s` | connect と request の timeout |
-| `sdk` | `(String name, String version)` | `com.accelhack.monica:monica-core` / `0.1.1` | envelope の `sdk` |
+| `sdk` | `(String name, String version)` | `com.accelhack.monica:monica-core` / `0.2.0` | envelope の `sdk` |
 | `transport` | `MonicaTransport` | JDK HttpClient 実装 | 送信経路の差し替え |
 | `onDiagnostic` | `MonicaDiagnostic` | `System.Logger` へ `WARNING` | 拒否の警告先。[TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
 

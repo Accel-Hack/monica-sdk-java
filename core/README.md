@@ -12,7 +12,7 @@ Java 11 以上。依存は `com.fasterxml.jackson.core:jackson-databind` だけ�
 <dependency>
   <groupId>com.accelhack.monica</groupId>
   <artifactId>monica-core</artifactId>
-  <version>0.1.1</version>
+  <version>0.2.0</version>
 </dependency>
 ```
 

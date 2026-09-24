@@ -13,7 +13,7 @@ Java 11 以上、Logback（検証は 1.2.13）。`logback-classic` は optional 
 <dependency>
   <groupId>com.accelhack.monica</groupId>
   <artifactId>monica-logback</artifactId>
-  <version>0.1.1</version>
+  <version>0.2.0</version>
 </dependency>
 ```
 

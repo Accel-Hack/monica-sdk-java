@@ -11,7 +11,7 @@ import java.util.function.Supplier;
 
 public final class MonicaOptions {
   static final String DEFAULT_SDK_NAME = "com.accelhack.monica:monica-core";
-  static final String DEFAULT_SDK_VERSION = "0.1.1";
+  static final String DEFAULT_SDK_VERSION = "0.2.0";
   /** The bound the event schema puts on {@code environment}; integrations validate against it. */
   public static final int MAX_ENVIRONMENT_LENGTH = 128;
   /** The item limit ingest puts on one envelope; a larger batch is split before it goes out. */
