@@ -73,6 +73,8 @@ auto-configuration が入れるもの:
   ERROR log と繰り返し抑制はそのまま残る
 - Logback root logger への appender 登録（`monica.logback.enabled=false` で止める）
 - context 停止時に `MonicaClient` を close（`monica.flush-timeout` まで flush を待つ）
+- `SpringApplication` の起動失敗の capture（level `fatal`、tag `integration=spring_boot_startup`）。
+  起動に失敗したときも flush してから client を close する
 - Actuator の health indicator `monica`（`queued` / `discarded` を出す。常に UP）
 - 疎通確認用の `MonicaTestService` bean（`sendTestEvent()` が `info` event を 1 件送って flush する）
 
