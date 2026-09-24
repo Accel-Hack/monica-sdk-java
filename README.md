@@ -32,7 +32,7 @@ Maven registry は匿名で取得できないので、repository の宣言と to
   <dependency>
     <groupId>com.accelhack.monica</groupId>
     <artifactId>monica-spring-boot2-starter</artifactId>
-    <version>0.1.1</version>
+    <version>0.2.0</version>
   </dependency>
 </dependencies>
 ```
@@ -245,7 +245,7 @@ Logback が SLF4J の binding のとき、health indicator は Actuator が clas
 | `sampleRate` | `double` | `1` | 0〜1。event ごとに判定する |
 | `maxRetries` | `int` | `5` | 再送回数（`429` / `5xx` / network 失敗のみ） |
 | `requestTimeout` | `Duration` | `2s` | connect と request の timeout |
-| `sdk` | `(String name, String version)` | `com.accelhack.monica:monica-core` / `0.1.1` | envelope の `sdk` |
+| `sdk` | `(String name, String version)` | `com.accelhack.monica:monica-core` / `0.2.0` | envelope の `sdk` |
 | `transport` | `MonicaTransport` | JDK HttpClient 実装 | 送信経路の差し替え |
 | `onDiagnostic` | `MonicaDiagnostic` | `System.Logger` へ `WARNING` | 拒否の警告先。[TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
 

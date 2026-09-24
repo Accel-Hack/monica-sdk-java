@@ -13,7 +13,7 @@ Spring Boot 2 系（検証は 2.6.15）/ Spring Framework 5 / `javax.servlet`、
 <dependency>
   <groupId>com.accelhack.monica</groupId>
   <artifactId>monica-spring-boot2-starter</artifactId>
-  <version>0.1.1</version>
+  <version>0.2.0</version>
 </dependency>
 ```
 
