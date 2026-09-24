@@ -39,6 +39,10 @@ Maven registry は匿名で取得できないので、repository の宣言と to
 
 Spring を使わない場合は `monica-core`（必要なら `monica-logback`）を同じ座標で指定する。
 
+GitHub Packages の Maven registry は、同じ owner の package ならその owner 配下のどの
+repository URL からでも返す。Accel-Hack の repository を既に宣言していれば、上の
+`<repository>` は足さなくてよい。
+
 credential は `~/.m2/settings.xml` に environment variable 名だけを書く。`<id>` は
 `<repository>` の id と一致させる。
 
@@ -64,7 +68,8 @@ mvn verify
 
 ### GitHub Actions から取る場合
 
-job に `packages: read` を与え、その repository の `GITHUB_TOKEN` を渡す。
+job に `packages: read` を与え、その repository の `GITHUB_TOKEN` を渡す。package は public
+なので、Accel-Hack 以外の organization の repository でも personal access token は要らない。
 
 ```yaml
 permissions:
