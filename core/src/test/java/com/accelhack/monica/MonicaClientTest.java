@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -17,6 +18,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 
 class MonicaClientTest {
@@ -112,6 +114,70 @@ class MonicaClientTest {
     Throwable throwable = new IllegalArgumentException("same object");
     assertNotNull(client.captureException(throwable));
     assertNull(client.captureException(throwable));
+    client.close();
+  }
+
+  @Test
+  void skipsAThrowableWhoseCauseWasAlreadyCaptured() {
+    MonicaClient client = MonicaClient.builder()
+        .environment("test")
+        .transport(envelope -> true)
+        .build();
+    Throwable root = new IllegalArgumentException("logged by the application");
+    Throwable wrapper = new RuntimeException("rethrown by the container",
+        new IllegalStateException("middle", root));
+
+    assertNotNull(client.captureException(root));
+    assertNull(client.captureException(wrapper));
+    client.close();
+  }
+
+  @Test
+  void sendsAgainOnceTheDeduplicationWindowHasPassed() {
+    AtomicLong now = new AtomicLong(1_000_000);
+    MonicaClient client = MonicaClient.builder()
+        .environment("test")
+        .transport(envelope -> true)
+        .clock(() -> Instant.ofEpochMilli(now.get()))
+        .build();
+    // HotSpot reuses one stackless NPE under OmitStackTraceInFastThrow; repeats must not vanish.
+    Throwable reused = new NullPointerException();
+
+    assertNotNull(client.captureException(reused));
+    now.addAndGet(1_001);
+    assertNotNull(client.captureException(new RuntimeException("wrapper", reused)));
+    now.addAndGet(1_001);
+    assertNotNull(client.captureException(reused));
+    client.close();
+  }
+
+  @Test
+  void stillSendsACauseCapturedAfterItsWrapper() {
+    MonicaClient client = MonicaClient.builder()
+        .environment("test")
+        .transport(envelope -> true)
+        .build();
+    Throwable root = new IllegalArgumentException("root");
+    Throwable wrapper = new RuntimeException("wrapper", root);
+
+    assertNotNull(client.captureException(wrapper));
+    assertNotNull(client.captureException(root));
+    client.close();
+  }
+
+  @Test
+  void survivesACyclicCauseChain() {
+    MonicaClient client = MonicaClient.builder()
+        .environment("test")
+        .transport(envelope -> true)
+        .build();
+    Throwable first = new IllegalStateException("first");
+    Throwable second = new IllegalArgumentException("second", first);
+    first.initCause(second);
+
+    assertNotNull(client.captureException(first));
+    assertNull(client.captureException(second));
+    assertNotNull(client.captureException(new RuntimeException("unrelated", new Error())));
     client.close();
   }
 

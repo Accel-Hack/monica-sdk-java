@@ -7,13 +7,15 @@ import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Deque;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -22,6 +24,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 
 public final class MonicaClient implements AutoCloseable {
   private static final Set<String> LEVELS = new HashSet<>(
@@ -63,6 +66,10 @@ public final class MonicaClient implements AutoCloseable {
   public String captureException(Throwable throwable, CaptureContext context) {
     if (throwable == null || closed) return null;
     try {
+      // Checked again when enqueuing; this early exit spares beforeSend and conversion.
+      synchronized (lock) {
+        if (capturedBeforeLocked(throwable)) return null;
+      }
       CaptureContext safeContext = context == null ? CaptureContext.create() : context;
       MonicaEvent event = baseEvent(safeContext.level());
       event.put("exception", ThrowableConverter.convert(throwable, options.inAppPackages,
@@ -202,7 +209,11 @@ public final class MonicaClient implements AutoCloseable {
     boolean sendNow;
     synchronized (lock) {
       if (closed) return null;
-      if (deduplicationKey != null && isDuplicateLocked(deduplicationKey)) return null;
+      if (deduplicationKey != null) {
+        if (capturedBeforeLocked(deduplicationKey)) return null;
+        seenThrowables.addLast(new SeenThrowable(deduplicationKey, nowMillis()));
+        while (seenThrowables.size() > MAX_SEEN_THROWABLES) seenThrowables.removeFirst();
+      }
       if (queue.size() >= options.maxQueueSize) {
         queue.removeFirst();
         discarded++;
@@ -298,20 +309,33 @@ public final class MonicaClient implements AutoCloseable {
     }
   }
 
-  private boolean isDuplicateLocked(Throwable throwable) {
-    long now = System.currentTimeMillis();
+  /**
+   * True when {@code throwable} or any of its causes was captured within the last second.
+   * Integrations report one failure several times within milliseconds: an application log,
+   * the MVC resolver, then the container's log of the wrapping {@code ServletException}.
+   * The window keeps repeats of a reused instance (HotSpot's preallocated stackless NPE under
+   * OmitStackTraceInFastThrow, a cached exception) from being dropped for good. Only the
+   * captured instance is remembered, so capturing a cause after its wrapper still sends.
+   */
+  private boolean capturedBeforeLocked(Throwable throwable) {
+    long now = nowMillis();
+    Set<Throwable> recent = Collections.newSetFromMap(new IdentityHashMap<>());
     for (Iterator<SeenThrowable> iterator = seenThrowables.iterator(); iterator.hasNext();) {
       SeenThrowable seen = iterator.next();
       Throwable candidate = seen.throwable.get();
-      if (candidate == null || now - seen.seenAt > DEDUPLICATION_WINDOW_MILLIS) {
-        iterator.remove();
-      } else if (candidate == throwable) {
-        return true;
-      }
+      if (candidate == null || now - seen.seenAt > DEDUPLICATION_WINDOW_MILLIS) iterator.remove();
+      else recent.add(candidate);
     }
-    seenThrowables.addLast(new SeenThrowable(throwable, now));
-    while (seenThrowables.size() > MAX_SEEN_THROWABLES) seenThrowables.removeFirst();
+    if (recent.isEmpty()) return false;
+    Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+    for (Throwable t = throwable; t != null && visited.add(t); t = t.getCause()) {
+      if (recent.contains(t)) return true;
+    }
     return false;
+  }
+
+  private long nowMillis() {
+    return options.clock.get().toEpochMilli();
   }
 
   private static ThreadFactory daemonThreadFactory() {
@@ -383,6 +407,7 @@ public final class MonicaClient implements AutoCloseable {
     public Builder onDiagnostic(MonicaDiagnostic value) { options.onDiagnostic(value); return this; }
     public Builder maxRetries(int value) { options.maxRetries(value); return this; }
     public Builder requestTimeout(Duration value) { options.requestTimeout(value); return this; }
+    Builder clock(Supplier<Instant> value) { options.clock(value); return this; }
 
     public MonicaClient build() {
       return new MonicaClient(options.build());
