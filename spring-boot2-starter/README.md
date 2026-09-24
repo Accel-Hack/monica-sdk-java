@@ -37,7 +37,7 @@ monica:
       - request_id
 ```
 
-`monica.dsn` があるときだけ `MonicaClient` bean を作る。未設定、または `monica.enabled=false` の
+`monica.dsn` があるときだけ `MonicaClient` bean を作る。未設定（空文字・空白だけの値も未設定扱い）、または `monica.enabled=false` の
 ときは auto-configuration が丸ごと効かない。
 
 ## 使い方
