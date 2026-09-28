@@ -39,6 +39,7 @@ public final class MonicaOptions {
   final MonicaDiagnostic diagnostic;
   final Supplier<Instant> clock;
   final Supplier<Double> random;
+  final MonicaPresenceStore presenceStore;
 
   private MonicaOptions(Builder builder) {
     dsn = builder.dsn;
@@ -64,6 +65,8 @@ public final class MonicaOptions {
         requireText(builder.dsn, "dsn"), builder.maxRetries, builder.requestTimeout, diagnostic);
     clock = Objects.requireNonNull(builder.clock, "clock");
     random = Objects.requireNonNull(builder.random, "random");
+    presenceStore = builder.presenceStore != null ? builder.presenceStore
+        : MonicaPresenceStore.inMemory();
   }
 
   public static Builder builder() {
@@ -116,6 +119,7 @@ public final class MonicaOptions {
     private MonicaDiagnostic diagnostic;
     private Supplier<Instant> clock = Instant::now;
     private Supplier<Double> random = new Random()::nextDouble;
+    private MonicaPresenceStore presenceStore;
     private int maxRetries = 5;
     private Duration requestTimeout = Duration.ofSeconds(2);
 
@@ -223,6 +227,15 @@ public final class MonicaOptions {
 
     public Builder requestTimeout(Duration requestTimeout) {
       this.requestTimeout = requestTimeout;
+      return this;
+    }
+
+    /**
+     * Where the presence heartbeat keeps its state. {@code null} keeps the in-memory default; a
+     * distributable passes device storage.
+     */
+    public Builder presenceStore(MonicaPresenceStore presenceStore) {
+      this.presenceStore = presenceStore;
       return this;
     }
 

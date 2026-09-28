@@ -97,7 +97,11 @@ public final class JdkHttpTransport implements MonicaTransport {
         // Read before branching: the stream has to be closed either way, and a rejection's
         // reason is only in the body.
         byte[] payload = readCapped(response.body());
-        if (status >= 200 && status < 300) return SendResult.of(true, status);
+        if (status >= 200 && status < 300) {
+          return SendResult.accepted(status,
+              response.headers().firstValue(PRESENCE_INTERVAL_HEADER).orElse(null),
+              response.headers().firstValue(PRESENCE_SAMPLE_RATE_HEADER).orElse(null));
+        }
         if (status != 429 && status < 500) return rejected(status, payload);
         if (attempt == maxRetries) return SendResult.of(false, status);
         sleep(retryDelay(response, attempt));

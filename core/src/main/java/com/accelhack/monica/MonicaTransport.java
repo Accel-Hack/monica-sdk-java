@@ -2,6 +2,10 @@ package com.accelhack.monica;
 
 @FunctionalInterface
 public interface MonicaTransport {
+  /** Read off a {@code 202} and handed back with {@link SendResult#accepted(int, String, String)}. */
+  String PRESENCE_INTERVAL_HEADER = "X-Monica-Presence-Interval-Ms";
+  String PRESENCE_SAMPLE_RATE_HEADER = "X-Monica-Presence-Sample-Rate";
+
   /**
    * Sends one envelope and says whether ingest accepted it.
    *

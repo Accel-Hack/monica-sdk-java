@@ -249,6 +249,7 @@ Logback が SLF4J の binding のとき、health indicator は Actuator が clas
 | `sdk` | `(String name, String version)` | `com.accelhack.monica:monica-core` / `0.2.0` | envelope の `sdk` |
 | `transport` | `MonicaTransport` | JDK HttpClient 実装 | 送信経路の差し替え |
 | `onDiagnostic` | `MonicaDiagnostic` | `System.Logger` へ `WARNING` | 拒否の警告先。[TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
+| `presenceStore` | `MonicaPresenceStore` | プロセス内メモリ | 稼働確認の状態の保存先。配布物（monica-android）が端末のストレージに差し替える。サーバでは指定しない |
 
 ### Spring Boot properties
 
@@ -292,6 +293,11 @@ Spring Boot starter: HTTP method と Spring MVC の route template（`/orders/{i
 
 ユーザーを特定する情報は自動では読まない。`Scope.setUser(...)` を呼んだときだけ event に入る。
 tag・context・breadcrumb も、アプリケーションが入れたものだけを送る。
+
+## 稼働確認
+
+init 時と、直近 1 日に受理された envelope が無いときに、稼働確認の `client_report` を単独の
+envelope で送る。設定項目は無い。間隔は MONICA 側の project 設定で変わる。
 
 ## 送信結果と診断
 
