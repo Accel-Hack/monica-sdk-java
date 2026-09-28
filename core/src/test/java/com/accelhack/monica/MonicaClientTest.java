@@ -357,7 +357,6 @@ class MonicaClientTest {
     Long lastReportedAt;
     Long intervalMillis;
     Double sampleRate;
-    boolean intervalHeartbeats = true;
 
     @Override public Long getLastReportedAt() { return lastReportedAt; }
     @Override public void setLastReportedAt(long value) { lastReportedAt = value; }
@@ -365,7 +364,6 @@ class MonicaClientTest {
     @Override public void setIntervalMillis(long value) { intervalMillis = value; }
     @Override public Double getSampleRate() { return sampleRate; }
     @Override public void setSampleRate(double value) { sampleRate = value; }
-    @Override public boolean sendsIntervalHeartbeats() { return intervalHeartbeats; }
   }
 
   @Test
@@ -524,22 +522,6 @@ class MonicaClientTest {
       client.checkPresence();
       client.flush(Duration.ofSeconds(1));
       assertEquals(List.of("start"), presence.sends());
-    }
-  }
-
-  @Test
-  void aStoreWithoutIntervalHeartbeatsOnlySendsStart() {
-    Presence presence = new Presence();
-    DeviceStore store = new DeviceStore();
-    store.intervalHeartbeats = false;
-    try (MonicaClient client = presence.builder().presenceStore(store).build()) {
-      client.flush(Duration.ofSeconds(1));
-      presence.advance(DAY);
-      client.tick();
-      assertEquals(List.of("start"), presence.sends(), "no background interval heartbeat");
-      client.checkPresence();
-      client.flush(Duration.ofSeconds(1));
-      assertEquals(List.of("start", "start"), presence.sends());
     }
   }
 

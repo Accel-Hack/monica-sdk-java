@@ -251,7 +251,7 @@ public final class MonicaClient implements AutoCloseable {
 
   void tick() {
     drainBestEffort();
-    if (options.presenceStore.sendsIntervalHeartbeats()) heartbeat("interval");
+    heartbeat("interval");
   }
 
   /**
