@@ -251,7 +251,7 @@ public final class MonicaClient implements AutoCloseable {
 
   void tick() {
     drainBestEffort();
-    heartbeat("interval");
+    if (options.presenceStore.sendsIntervalHeartbeats()) heartbeat("interval");
   }
 
   /**
@@ -264,7 +264,8 @@ public final class MonicaClient implements AutoCloseable {
       long now = nowMillis();
       MonicaPresenceStore store = options.presenceStore;
       Long last = store.getLastReportedAt();
-      if (last != null && now - last < presenceInterval(store)) return;
+      // A time in the future is a clock that was set back: treat it as nothing stored.
+      if (last != null && last <= now && now - last < presenceInterval(store)) return;
       // Queued errors are about to be flushed, and their 202 says the same thing.
       if ("interval".equals(trigger) && queued() > 0) return;
       store.setLastReportedAt(now);

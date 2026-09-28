@@ -58,12 +58,14 @@ public final class SendResult {
   }
 
   /**
-   * A {@code 202} with the raw values of {@link MonicaTransport#PRESENCE_INTERVAL_HEADER} and
+   * A 2xx with the raw values of {@link MonicaTransport#PRESENCE_INTERVAL_HEADER} and
    * {@link MonicaTransport#PRESENCE_SAMPLE_RATE_HEADER}, {@code null} for an absent header. The
-   * client validates them; a transport only copies them out of the response.
+   * client validates them; a transport only copies them out of the response. Any other status
+   * is a rejection and the headers are dropped.
    */
   public static SendResult accepted(int status, String presenceIntervalMs,
       String presenceSampleRate) {
+    if (status < 200 || status >= 300) return rejected(status, null, null, null);
     return new SendResult(true, status, null, null, null, false, presenceIntervalMs,
         presenceSampleRate);
   }

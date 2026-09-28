@@ -296,10 +296,13 @@ class MonicaClientTest {
 
   // --- presence heartbeat (client_report) -----------------------------------
 
-  /** A store that has just reported, so tests about other things see no heartbeat. */
+  /**
+   * A store that has just reported, so tests about other things see no heartbeat. Tests on a
+   * fake clock set before the real time still get a start heartbeat; they do not count it.
+   */
   static MonicaPresenceStore alreadyReported() {
     MonicaPresenceStore store = MonicaPresenceStore.inMemory();
-    store.setLastReportedAt(Long.MAX_VALUE);
+    store.setLastReportedAt(System.currentTimeMillis());
     return store;
   }
 
@@ -354,6 +357,7 @@ class MonicaClientTest {
     Long lastReportedAt;
     Long intervalMillis;
     Double sampleRate;
+    boolean intervalHeartbeats = true;
 
     @Override public Long getLastReportedAt() { return lastReportedAt; }
     @Override public void setLastReportedAt(long value) { lastReportedAt = value; }
@@ -361,6 +365,7 @@ class MonicaClientTest {
     @Override public void setIntervalMillis(long value) { intervalMillis = value; }
     @Override public Double getSampleRate() { return sampleRate; }
     @Override public void setSampleRate(double value) { sampleRate = value; }
+    @Override public boolean sendsIntervalHeartbeats() { return intervalHeartbeats; }
   }
 
   @Test
@@ -519,6 +524,83 @@ class MonicaClientTest {
       client.checkPresence();
       client.flush(Duration.ofSeconds(1));
       assertEquals(List.of("start"), presence.sends());
+    }
+  }
+
+  @Test
+  void aStoreWithoutIntervalHeartbeatsOnlySendsStart() {
+    Presence presence = new Presence();
+    DeviceStore store = new DeviceStore();
+    store.intervalHeartbeats = false;
+    try (MonicaClient client = presence.builder().presenceStore(store).build()) {
+      client.flush(Duration.ofSeconds(1));
+      presence.advance(DAY);
+      client.tick();
+      assertEquals(List.of("start"), presence.sends(), "no background interval heartbeat");
+      client.checkPresence();
+      client.flush(Duration.ofSeconds(1));
+      assertEquals(List.of("start", "start"), presence.sends());
+    }
+  }
+
+  @Test
+  void queuedItemsHoldBackTheIntervalHeartbeat() throws Exception {
+    AtomicLong now = new AtomicLong(1_788_000_000_000L);
+    List<String> sends = Collections.synchronizedList(new ArrayList<>());
+    CountDownLatch senderBusy = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    MonicaClient client = MonicaClient.builder()
+        .environment("test")
+        .batchSize(2)
+        .flushInterval(Duration.ofDays(1))
+        .clock(() -> Instant.ofEpochMilli(now.get()))
+        .transport(envelope -> {
+          MonicaEvent first = envelope.getItems().get(0);
+          boolean heartbeat = "client_report".equals(first.get("type"));
+          sends.add(heartbeat ? String.valueOf(first.get("trigger")) : "error");
+          // Hold the sender inside its first error batch so the queue cannot drain behind the test.
+          if (!heartbeat && Thread.currentThread().getName().equals("monica-java-sender")
+              && senderBusy.getCount() > 0) {
+            senderBusy.countDown();
+            release.await(5, TimeUnit.SECONDS);
+          }
+          // Errors fail, so no 202 refreshes the presence time: only the queue holds it back.
+          return heartbeat;
+        })
+        .build();
+    try {
+      client.flush(Duration.ofSeconds(1));
+      now.addAndGet(DAY);
+      for (int index = 0; index < 6; index++) client.captureMessage("queued " + index);
+      assertTrue(senderBusy.await(1, TimeUnit.SECONDS));
+      client.tick();
+      assertTrue(client.stats().getQueued() > 0, "the tick drains one batch only");
+      assertFalse(sends.contains("interval"),
+          "a queue with items must not send an interval heartbeat: " + sends);
+    } finally {
+      release.countDown();
+      client.close();
+    }
+  }
+
+  @Test
+  void aNon2xxIsNeverAcceptedAndDropsThePresenceHeaders() {
+    SendResult result = SendResult.accepted(503, "120000", "0.5");
+    assertFalse(result.isAccepted());
+    assertEquals(java.util.OptionalInt.of(503), result.getStatus());
+    assertNull(result.getPresenceIntervalMs());
+    assertNull(result.getPresenceSampleRate());
+    assertTrue(SendResult.accepted(202, "120000", "0.5").isAccepted());
+  }
+
+  @Test
+  void aStoredTimeInTheFutureCountsAsNothingStored() {
+    Presence presence = new Presence();
+    DeviceStore store = new DeviceStore();
+    store.lastReportedAt = presence.now.get() + DAY;
+    try (MonicaClient client = presence.builder().presenceStore(store).build()) {
+      client.flush(Duration.ofSeconds(1));
+      assertEquals(List.of("start"), presence.sends(), "a clock set back must not silence presence");
     }
   }
 }

@@ -30,6 +30,15 @@ public interface MonicaPresenceStore {
 
   void setSampleRate(double sampleRate);
 
+  /**
+   * Whether the flush tick sends {@code interval} heartbeats. A distributable's (Android's)
+   * store answers {@code false} and sends only the {@code start} at launch and on returning to
+   * the foreground, because the spec gives mobile no background timer.
+   */
+  default boolean sendsIntervalHeartbeats() {
+    return true;
+  }
+
   /** The default: process memory, and no sampling. */
   static MonicaPresenceStore inMemory() {
     return new InMemoryPresenceStore();

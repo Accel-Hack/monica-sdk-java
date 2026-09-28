@@ -62,7 +62,7 @@ class MonicaSchedulingIntegrationTest {
   /** Keeps the init heartbeat out of what these tests count. */
   private static MonicaPresenceStore alreadyReported() {
     MonicaPresenceStore store = MonicaPresenceStore.inMemory();
-    store.setLastReportedAt(Long.MAX_VALUE);
+    store.setLastReportedAt(System.currentTimeMillis());
     return store;
   }
 }
