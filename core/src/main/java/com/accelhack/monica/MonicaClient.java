@@ -55,6 +55,7 @@ public final class MonicaClient implements AutoCloseable {
   private long discarded;
   private volatile boolean closed;
   private volatile SendResult lastSendResult;
+  private volatile boolean presenceSuspended;
 
   private MonicaClient(MonicaOptions options) {
     this.options = options;
@@ -183,6 +184,17 @@ public final class MonicaClient implements AutoCloseable {
     }
   }
 
+  /**
+   * While {@code true}, no heartbeat is attempted: neither {@code start} nor {@code interval},
+   * and the stored time is left alone. For a distributable to set while the app is in the
+   * background, so a heartbeat tried while the OS blocks the network does not use up the
+   * interval. Setting it back to {@code false} sends nothing; call {@link #checkPresence()} on
+   * return to the foreground. Defaults to {@code false}.
+   */
+  public void setPresenceSuspended(boolean suspended) {
+    presenceSuspended = suspended;
+  }
+
   public MonicaStats stats() {
     synchronized (lock) {
       return new MonicaStats(queue.size(), discarded);
@@ -260,6 +272,7 @@ public final class MonicaClient implements AutoCloseable {
    * rather than on every tick; a {@code 202} writes it again in {@link #deliver}.
    */
   private void heartbeat(String trigger) {
+    if (presenceSuspended) return;
     try {
       long now = nowMillis();
       MonicaPresenceStore store = options.presenceStore;

@@ -505,6 +505,30 @@ class MonicaClientTest {
   }
 
   @Test
+  void aSuspendedClientNeitherSendsNorSpendsTheInterval() {
+    Presence presence = new Presence();
+    DeviceStore store = new DeviceStore();
+    try (MonicaClient client = presence.builder().presenceStore(store).build()) {
+      client.flush(Duration.ofSeconds(1));
+      assertEquals(List.of("start"), presence.sends());
+      Long reported = store.lastReportedAt;
+      client.setPresenceSuspended(true);
+      presence.advance(DAY);
+      client.tick();
+      client.checkPresence();
+      client.flush(Duration.ofSeconds(1));
+      assertEquals(List.of("start"), presence.sends(), "nothing goes out in the background");
+      assertEquals(reported, store.lastReportedAt, "the interval is not spent");
+      client.setPresenceSuspended(false);
+      client.flush(Duration.ofSeconds(1));
+      assertEquals(List.of("start"), presence.sends(), "resuming alone sends nothing");
+      client.checkPresence();
+      client.flush(Duration.ofSeconds(1));
+      assertEquals(List.of("start", "start"), presence.sends(), "the foreground check sends");
+    }
+  }
+
+  @Test
   void aDistributableSamplesItsHeartbeatAtTheStoredRate() {
     Presence presence = new Presence();
     DeviceStore store = new DeviceStore();
