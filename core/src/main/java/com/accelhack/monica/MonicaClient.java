@@ -61,7 +61,8 @@ public final class MonicaClient implements AutoCloseable {
     this.options = options;
     this.globalScope = new Scope(options.maxBreadcrumbs);
     this.sender = Executors.newSingleThreadScheduledExecutor(daemonThreadFactory());
-    sender.execute(() -> heartbeat("start"));
+    this.presenceSuspended = options.presenceSuspended;
+    if (!presenceSuspended) sender.execute(() -> heartbeat("start"));
     sender.scheduleWithFixedDelay(this::tick, options.flushInterval.toMillis(),
         options.flushInterval.toMillis(), TimeUnit.MILLISECONDS);
   }
@@ -171,14 +172,20 @@ public final class MonicaClient implements AutoCloseable {
   }
 
   /**
-   * Sends a {@code start} {@code client_report} unless an envelope was accepted, or a heartbeat
-   * attempted, within the presence interval. For a distributable to call when the app returns to
-   * the foreground; the client already checks at init and on every flush tick.
+   * Lifts {@link #setPresenceSuspended(boolean) suspension} and sends a {@code start}
+   * {@code client_report} unless an envelope was accepted, or a heartbeat attempted, within the
+   * presence interval. For a distributable to call when the app returns to the foreground; the
+   * client already checks at init and on every flush tick. Both happen on the sender thread, so
+   * a tick queued before this call still sees the client suspended and sends no
+   * {@code interval}.
    */
   public void checkPresence() {
     if (closed) return;
     try {
-      sender.execute(() -> heartbeat("start"));
+      sender.execute(() -> {
+        presenceSuspended = false;
+        heartbeat("start");
+      });
     } catch (RuntimeException ignored) {
       // Rejected after close: nothing left to report.
     }
@@ -188,8 +195,9 @@ public final class MonicaClient implements AutoCloseable {
    * While {@code true}, no heartbeat is attempted: neither {@code start} nor {@code interval},
    * and the stored time is left alone. For a distributable to set while the app is in the
    * background, so a heartbeat tried while the OS blocks the network does not use up the
-   * interval. Setting it back to {@code false} sends nothing; call {@link #checkPresence()} on
-   * return to the foreground. Defaults to {@code false}.
+   * interval. Setting it back to {@code false} sends nothing; on return to the foreground call
+   * {@link #checkPresence()}, which lifts it itself. Defaults to {@code false}, or to what
+   * {@link Builder#presenceSuspended(boolean)} set.
    */
   public void setPresenceSuspended(boolean suspended) {
     presenceSuspended = suspended;
@@ -524,6 +532,7 @@ public final class MonicaClient implements AutoCloseable {
     public Builder maxRetries(int value) { options.maxRetries(value); return this; }
     public Builder requestTimeout(Duration value) { options.requestTimeout(value); return this; }
     public Builder presenceStore(MonicaPresenceStore value) { options.presenceStore(value); return this; }
+    public Builder presenceSuspended(boolean value) { options.presenceSuspended(value); return this; }
     Builder clock(Supplier<Instant> value) { options.clock(value); return this; }
     Builder random(Supplier<Double> value) { options.random(value); return this; }
 

@@ -310,8 +310,9 @@ envelope（heartbeat）を送る。endpoint・認証・リトライは error の
 - 判定の間隔は `202` の応答 header `X-Monica-Presence-Interval-Ms` を読んで次の判定から使う。
   既定は 1 日で、60 秒未満や数値でない値は無視する。`X-Monica-Presence-Sample-Rate` は読むが、
   この SDK は間引かない。SDK 側に設定項目は無い。
-- 配布物（monica-android）は、バックグラウンド中に `setPresenceSuspended(true)` で heartbeat を止め、
-  フォアグラウンド復帰時に `false` に戻して `checkPresence()` を呼ぶ。サーバでは使わない。
+- 配布物（monica-android）は、`presenceSuspended(true)` で構築して init の `start` を止め、
+  バックグラウンド中は `setPresenceSuspended(true)` で heartbeat を止める。フォアグラウンドに
+  なるたびに `checkPresence()` を呼び、suspend を解除して判定する。サーバでは使わない。
 
 導入側で気を付けること:
 

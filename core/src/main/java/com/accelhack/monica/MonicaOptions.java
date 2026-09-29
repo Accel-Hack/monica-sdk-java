@@ -40,6 +40,7 @@ public final class MonicaOptions {
   final Supplier<Instant> clock;
   final Supplier<Double> random;
   final MonicaPresenceStore presenceStore;
+  final boolean presenceSuspended;
 
   private MonicaOptions(Builder builder) {
     dsn = builder.dsn;
@@ -67,6 +68,7 @@ public final class MonicaOptions {
     random = Objects.requireNonNull(builder.random, "random");
     presenceStore = builder.presenceStore != null ? builder.presenceStore
         : MonicaPresenceStore.inMemory();
+    presenceSuspended = builder.presenceSuspended;
   }
 
   public static Builder builder() {
@@ -120,6 +122,7 @@ public final class MonicaOptions {
     private Supplier<Instant> clock = Instant::now;
     private Supplier<Double> random = new Random()::nextDouble;
     private MonicaPresenceStore presenceStore;
+    private boolean presenceSuspended;
     private int maxRetries = 5;
     private Duration requestTimeout = Duration.ofSeconds(2);
 
@@ -236,6 +239,16 @@ public final class MonicaOptions {
      */
     public Builder presenceStore(MonicaPresenceStore presenceStore) {
       this.presenceStore = presenceStore;
+      return this;
+    }
+
+    /**
+     * Builds the client with the heartbeat already suspended, so no {@code start} goes out at
+     * init; the first {@link MonicaClient#checkPresence()} sends it. For a distributable that
+     * installs the client before the app is in the foreground. Defaults to {@code false}.
+     */
+    public Builder presenceSuspended(boolean presenceSuspended) {
+      this.presenceSuspended = presenceSuspended;
       return this;
     }
 
