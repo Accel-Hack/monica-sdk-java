@@ -296,8 +296,28 @@ tag・context・breadcrumb も、アプリケーションが入れたものだ�
 
 ## 稼働確認
 
-init 時と、直近 1 日に受理された envelope が無いときに、稼働確認の `client_report` を単独の
-envelope で送る。設定項目は無い。間隔は MONICA 側の project 設定で変わる。
+アプリケーションが動いていることを MONICA に知らせるため、`client_report` item 1 件だけの
+envelope（heartbeat）を送る。endpoint・認証・リトライは error の送信と同じで、背景 thread から送る。
+
+- init 時に `trigger: "start"` を 1 通送る。
+- 定期送信（`flushInterval` ごと）のたびに判定し、直近 1 間隔（既定 1 日）に受理（`202`）された
+  envelope が無く、queue が空なら `trigger: "interval"` を送る。error の envelope が受理されても
+  期限は伸びる。
+- 送信に失敗した heartbeat は次の tick で再送せず、1 間隔後の判定まで待つ。
+- 状態（最後に受理された時刻または heartbeat を試みた時刻、MONICA から届いた間隔）はプロセス内
+  メモリに持つ。再起動や `MonicaClient` の作り直しのたびに `start` が出る。複数プロセスはそれぞれ
+  送る。
+- 判定の間隔は `202` の応答 header `X-Monica-Presence-Interval-Ms` を読んで次の判定から使う。
+  既定は 1 日で、60 秒未満や数値でない値は無視する。`X-Monica-Presence-Sample-Rate` は読むが、
+  この SDK は間引かない。SDK 側に設定項目は無い。
+
+導入側で気を付けること:
+
+- Spring Boot では application context が起動するたびに `start` が 1 通出る。実 DSN を設定した
+  test も同じなので、test では `monica.enabled=false` にするか DSN を外す。
+- MONICA に届かないと、init 直後の `start` のリトライが送信 thread を塞ぐ（既定の設定で backoff
+  の待ちだけで最大 31 秒、各回の `requestTimeout` が加わる）。その間の error は queue に溜まり、
+  後で送る。error の送信が失敗したときと同じ挙動。
 
 ## 送信結果と診断
 
