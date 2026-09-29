@@ -505,6 +505,94 @@ class MonicaClientTest {
   }
 
   @Test
+  void aSuspendedClientNeitherSendsNorSpendsTheInterval() {
+    Presence presence = new Presence();
+    DeviceStore store = new DeviceStore();
+    try (MonicaClient client = presence.builder().presenceStore(store).build()) {
+      client.flush(Duration.ofSeconds(1));
+      assertEquals(List.of("start"), presence.sends());
+      Long reported = store.lastReportedAt;
+      client.setPresenceSuspended(true);
+      presence.advance(DAY);
+      client.tick();
+      client.flush(Duration.ofSeconds(1));
+      assertEquals(List.of("start"), presence.sends(), "nothing goes out in the background");
+      assertEquals(reported, store.lastReportedAt, "the interval is not spent");
+      client.setPresenceSuspended(false);
+      client.flush(Duration.ofSeconds(1));
+      assertEquals(List.of("start"), presence.sends(), "resuming alone sends nothing");
+      client.checkPresence();
+      client.flush(Duration.ofSeconds(1));
+      assertEquals(List.of("start", "start"), presence.sends(), "the foreground check sends");
+    }
+  }
+
+  @Test
+  void aClientBuiltSuspendedSendsItsFirstStartOnCheckPresence() {
+    Presence presence = new Presence();
+    DeviceStore store = new DeviceStore();
+    try (MonicaClient client = presence.builder().presenceStore(store).presenceSuspended(true)
+        .build()) {
+      client.flush(Duration.ofSeconds(1));
+      client.tick();
+      presence.advance(DAY);
+      client.tick();
+      assertEquals(List.of(), presence.sends(), "no start at init, no interval while suspended");
+      assertNull(store.lastReportedAt);
+      client.checkPresence();
+      client.flush(Duration.ofSeconds(1));
+      assertEquals(List.of("start"), presence.sends());
+    }
+  }
+
+  @Test
+  void checkPresenceWinsOverATickQueuedWhileSuspended() throws Exception {
+    Presence presence = new Presence();
+    CountDownLatch busy = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    MonicaClient client = presence.builder()
+        .presenceSuspended(true)
+        .flushInterval(Duration.ofMillis(10))
+        .transport(new MonicaTransport() {
+          @Override
+          public boolean send(MonicaEnvelope envelope) {
+            return deliver(envelope).isAccepted();
+          }
+
+          @Override
+          public SendResult deliver(MonicaEnvelope envelope) {
+            presence.sent.add(envelope);
+            if (!"error".equals(envelope.getItems().get(0).get("type"))) {
+              return SendResult.of(true, 202);
+            }
+            busy.countDown();
+            try {
+              release.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+              Thread.currentThread().interrupt();
+            }
+            // Not accepted, so the error does not count as presence.
+            return SendResult.of(false, 503);
+          }
+        })
+        .build();
+    try {
+      client.captureMessage("boom");
+      assertTrue(busy.await(5, TimeUnit.SECONDS), "the sender thread is held on the error");
+      // A tick falls due while the sender is held, ahead of the check queued below.
+      Thread.sleep(50);
+      client.checkPresence();
+      release.countDown();
+      client.flush(Duration.ofSeconds(1));
+      Thread.sleep(50);
+      assertEquals(List.of("error", "start"), presence.sends(), "one start, no interval");
+    } finally {
+      release.countDown();
+      client.close();
+    }
+  }
+
+  @Test
   void aDistributableSamplesItsHeartbeatAtTheStoredRate() {
     Presence presence = new Presence();
     DeviceStore store = new DeviceStore();

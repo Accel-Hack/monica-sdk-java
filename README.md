@@ -32,7 +32,7 @@ Maven registry は匿名で取得できないので、repository の宣言と to
   <dependency>
     <groupId>com.accelhack.monica</groupId>
     <artifactId>monica-spring-boot2-starter</artifactId>
-    <version>0.3.0</version>
+    <version>0.3.1</version>
   </dependency>
 </dependencies>
 ```
@@ -246,7 +246,7 @@ Logback が SLF4J の binding のとき、health indicator は Actuator が clas
 | `sampleRate` | `double` | `1` | 0〜1。event ごとに判定する |
 | `maxRetries` | `int` | `5` | 再送回数（`429` / `5xx` / network 失敗のみ） |
 | `requestTimeout` | `Duration` | `2s` | connect と request の timeout |
-| `sdk` | `(String name, String version)` | `com.accelhack.monica:monica-core` / `0.3.0` | envelope の `sdk` |
+| `sdk` | `(String name, String version)` | `com.accelhack.monica:monica-core` / `0.3.1` | envelope の `sdk` |
 | `transport` | `MonicaTransport` | JDK HttpClient 実装 | 送信経路の差し替え |
 | `onDiagnostic` | `MonicaDiagnostic` | `System.Logger` へ `WARNING` | 拒否の警告先。[TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
 | `presenceStore` | `MonicaPresenceStore` | プロセス内メモリ | 稼働確認の状態の保存先。配布物（monica-android）が端末のストレージに差し替える。サーバでは指定しない |
@@ -310,6 +310,9 @@ envelope（heartbeat）を送る。endpoint・認証・リトライは error の
 - 判定の間隔は `202` の応答 header `X-Monica-Presence-Interval-Ms` を読んで次の判定から使う。
   既定は 1 日で、60 秒未満や数値でない値は無視する。`X-Monica-Presence-Sample-Rate` は読むが、
   この SDK は間引かない。SDK 側に設定項目は無い。
+- 配布物（monica-android）は、`presenceSuspended(true)` で構築して init の `start` を止め、
+  バックグラウンド中は `setPresenceSuspended(true)` で heartbeat を止める。フォアグラウンドに
+  なるたびに `checkPresence()` を呼び、suspend を解除して判定する。サーバでは使わない。
 
 導入側で気を付けること:
 
