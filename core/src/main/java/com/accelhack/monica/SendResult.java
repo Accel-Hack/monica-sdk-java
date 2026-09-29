@@ -15,8 +15,8 @@ import java.util.OptionalInt;
  * {@link MonicaTransport#deliver(MonicaEnvelope)} returns so the caller can see it.
  */
 public final class SendResult {
-  private static final SendResult ACCEPTED = new SendResult(true, 0, null, null, null, false);
-  private static final SendResult FAILED = new SendResult(false, 0, null, null, null, false);
+  private static final SendResult ACCEPTED = new SendResult(true, 0, null, null, null, false, null, null);
+  private static final SendResult FAILED = new SendResult(false, 0, null, null, null, false, null, null);
 
   private final boolean accepted;
   private final int status;
@@ -24,9 +24,11 @@ public final class SendResult {
   private final String errorMessage;
   private final List<Issue> issues;
   private final boolean stopped;
+  private final String presenceIntervalMs;
+  private final String presenceSampleRate;
 
   private SendResult(boolean accepted, int status, String errorCode, String errorMessage,
-      List<Issue> issues, boolean stopped) {
+      List<Issue> issues, boolean stopped, String presenceIntervalMs, String presenceSampleRate) {
     this.accepted = accepted;
     this.status = status;
     this.errorCode = errorCode;
@@ -35,6 +37,8 @@ public final class SendResult {
         ? Collections.emptyList()
         : Collections.unmodifiableList(new ArrayList<>(issues));
     this.stopped = stopped;
+    this.presenceIntervalMs = presenceIntervalMs;
+    this.presenceSampleRate = presenceSampleRate;
   }
 
   /**
@@ -50,7 +54,20 @@ public final class SendResult {
 
   /** A result carrying the status ingest answered and nothing read out of the body. */
   public static SendResult of(boolean accepted, int status) {
-    return new SendResult(accepted, status, null, null, null, false);
+    return new SendResult(accepted, status, null, null, null, false, null, null);
+  }
+
+  /**
+   * A 2xx with the raw values of {@link MonicaTransport#PRESENCE_INTERVAL_HEADER} and
+   * {@link MonicaTransport#PRESENCE_SAMPLE_RATE_HEADER}, {@code null} for an absent header. The
+   * client validates them; a transport only copies them out of the response. Any other status
+   * is a rejection and the headers are dropped.
+   */
+  public static SendResult accepted(int status, String presenceIntervalMs,
+      String presenceSampleRate) {
+    if (status < 200 || status >= 300) return rejected(status, null, null, null);
+    return new SendResult(true, status, null, null, null, false, presenceIntervalMs,
+        presenceSampleRate);
   }
 
   /** A rejection with whatever {@code error.json} the response body carried. */
@@ -66,7 +83,7 @@ public final class SendResult {
   public static SendResult rejected(int status, String errorCode, String errorMessage,
       List<Issue> issues, boolean stopped) {
     return new SendResult(status >= 200 && status < 300, status, errorCode, errorMessage, issues,
-        stopped);
+        stopped, null, null);
   }
 
   /** True when ingest accepted the envelope (HTTP 2xx). */
@@ -97,6 +114,16 @@ public final class SendResult {
   /** True once the transport has stopped sending, which a {@code 401} does for good. */
   public boolean isStopped() {
     return stopped;
+  }
+
+  /** The raw {@code X-Monica-Presence-Interval-Ms} of an accepted response. Nullable. */
+  public String getPresenceIntervalMs() {
+    return presenceIntervalMs;
+  }
+
+  /** The raw {@code X-Monica-Presence-Sample-Rate} of an accepted response. Nullable. */
+  public String getPresenceSampleRate() {
+    return presenceSampleRate;
   }
 
   @Override

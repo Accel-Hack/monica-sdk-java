@@ -1,5 +1,6 @@
 package com.accelhack.monica;
 
+import static com.accelhack.monica.MonicaClientTest.alreadyReported;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -446,7 +447,7 @@ class ProtocolContractTest {
     List<String> declared = new ArrayList<>();
     transportSpec.fieldNames().forEachRemaining(declared::add);
     Collections.sort(declared);
-    assertEquals(Arrays.asList("auth", "dsn", "endpoint", "retry", "status"), declared,
+    assertEquals(Arrays.asList("auth", "dsn", "endpoint", "presence", "retry", "status"), declared,
         "transport.json declares sections this SDK has not considered (see README for what is unimplemented)");
 
     List<String> statuses = new ArrayList<>();
@@ -498,6 +499,44 @@ class ProtocolContractTest {
         assertTrue(millis >= floor && millis <= cap,
             "attempt " + attempt + ": backoff " + millis + "ms is outside [" + floor + ", " + cap + "]");
       }
+    }
+  }
+
+  @Test
+  void thePresenceConstantsMatchTransportJson() {
+    JsonNode presence = transportSpec.get("presence");
+    assertEquals(presence.get("interval_ms").asLong(), MonicaClient.PRESENCE_INTERVAL_MILLIS);
+    assertEquals(presence.get("min_interval_ms").asLong(), MonicaClient.PRESENCE_MIN_INTERVAL_MILLIS);
+    assertEquals(presence.get("sample_rate").asDouble(), MonicaClient.PRESENCE_SAMPLE_RATE);
+    assertEquals(presence.get("min_sample_rate").asDouble(), MonicaClient.PRESENCE_MIN_SAMPLE_RATE);
+    assertEquals(presence.at("/override_headers/interval_ms").asText(),
+        MonicaTransport.PRESENCE_INTERVAL_HEADER);
+    assertEquals(presence.at("/override_headers/sample_rate").asText(),
+        MonicaTransport.PRESENCE_SAMPLE_RATE_HEADER);
+    List<String> headers = new ArrayList<>();
+    presence.get("override_headers").fieldNames().forEachRemaining(headers::add);
+    Collections.sort(headers);
+    assertEquals(Arrays.asList("interval_ms", "sample_rate"), headers,
+        "transport.json grew a presence header this SDK does not read");
+    assertTrue(enumValues(schema.pointer("/$defs/clientReportItem/properties/platform")).contains("java"),
+        "envelope.json must accept the java platform on a client_report");
+  }
+
+  @Test
+  void theTransportHandsThePresenceHeadersOfA202Back() throws Exception {
+    MonicaEnvelope envelope = envelopeFor(client -> client.captureMessage("presence"));
+    try (Ingest ingest = Ingest.start(202)) {
+      ingest.responseHeaders.put(MonicaTransport.PRESENCE_INTERVAL_HEADER, "3600000");
+      ingest.responseHeaders.put(MonicaTransport.PRESENCE_SAMPLE_RATE_HEADER, "0.25");
+      SendResult result = transportFor(ingest, 0).deliver(envelope);
+      assertTrue(result.isAccepted());
+      assertEquals("3600000", result.getPresenceIntervalMs());
+      assertEquals("0.25", result.getPresenceSampleRate());
+    }
+    try (Ingest ingest = Ingest.start(202)) {
+      SendResult result = transportFor(ingest, 0).deliver(envelope);
+      assertEquals(null, result.getPresenceIntervalMs(), "an absent header must stay absent");
+      assertEquals(null, result.getPresenceSampleRate());
     }
   }
 
@@ -787,6 +826,7 @@ class ProtocolContractTest {
           + "\"issues\":[{\"path\":\"$.items[0].request.method\",\"message\":\"Required\"}]}}")
           .getBytes(StandardCharsets.UTF_8);
       try (MonicaClient client = MonicaClient.builder()
+          .presenceStore(alreadyReported())
           .dsn("http://msk_contract@127.0.0.1:" + ingest.port() + "/1")
           .environment("contract")
           .maxRetries(0)
@@ -810,6 +850,7 @@ class ProtocolContractTest {
     SendResult rejection = SendResult.rejected(422, "invalid_envelope", "no",
         List.of(new SendResult.Issue("$.items[0].request.method", "Invalid type")), false);
     try (MonicaClient client = MonicaClient.builder()
+        .presenceStore(alreadyReported())
         .environment("contract")
         .transport(new MonicaTransport() {
           @Override
@@ -834,6 +875,7 @@ class ProtocolContractTest {
     // A transport written against monica-core 0.1.1 implements send() and nothing else. It
     // must keep compiling and running, with the default deliver() reporting what it can.
     try (MonicaClient legacy = MonicaClient.builder()
+        .presenceStore(alreadyReported())
         .environment("contract")
         .transport(envelope -> false)
         .build()) {
@@ -933,12 +975,25 @@ class ProtocolContractTest {
     List<JsonNode> unicode = capture(builder -> builder.environment("本番"),
         client -> client.captureException(new RuntimeException("結合できません\tid=1")));
     envelopes.put("a non-ASCII envelope", unicode.get(0));
+
+    // The heartbeat a fresh client sends at init, captured without the quiet test store.
+    List<MonicaEnvelope> heartbeats = Collections.synchronizedList(new ArrayList<>());
+    try (MonicaClient client = MonicaClient.builder()
+        .environment("contract")
+        .release("1.2.3")
+        .transport(envelope -> { heartbeats.add(envelope); return true; })
+        .build()) {
+      assertTrue(client.flush(Duration.ofSeconds(5)));
+    }
+    assertEquals(1, heartbeats.size());
+    envelopes.put("the start client_report", MAPPER.valueToTree(heartbeats.get(0)));
     return envelopes;
   }
 
   private static List<JsonNode> capture(Consumer<MonicaClient.Builder> configure, Consumer<MonicaClient> use) {
     List<MonicaEnvelope> sent = Collections.synchronizedList(new ArrayList<>());
     MonicaClient.Builder builder = MonicaClient.builder()
+        .presenceStore(alreadyReported())
         .environment("contract")
         .inAppPackage("com.accelhack.monica")
         .transport(envelope -> { sent.add(envelope); return true; });
@@ -956,6 +1011,7 @@ class ProtocolContractTest {
   private static MonicaEnvelope envelopeFor(Consumer<MonicaClient> use) {
     List<MonicaEnvelope> sent = Collections.synchronizedList(new ArrayList<>());
     try (MonicaClient client = MonicaClient.builder()
+        .presenceStore(alreadyReported())
         .environment("contract")
         .inAppPackage("com.accelhack.monica")
         .transport(envelope -> { sent.add(envelope); return true; })
@@ -1092,6 +1148,7 @@ class ProtocolContractTest {
     volatile int retryAfterSeconds = -1;
     /** The response body, for the statuses that carry an error.json. */
     volatile byte[] responseBody;
+    final Map<String, String> responseHeaders = new java.util.concurrent.ConcurrentHashMap<>();
 
     private Ingest(HttpServer server, int... statuses) {
       this.server = server;
@@ -1121,6 +1178,7 @@ class ProtocolContractTest {
         // keeps meeting the same answer.
         status = statuses.size() > 1 ? statuses.poll() : statuses.peek();
       }
+      responseHeaders.forEach((name, value) -> exchange.getResponseHeaders().add(name, value));
       if (retryAfterSeconds >= 0) exchange.getResponseHeaders().add("Retry-After", String.valueOf(retryAfterSeconds));
       byte[] payload = responseBody;
       if (payload == null) {

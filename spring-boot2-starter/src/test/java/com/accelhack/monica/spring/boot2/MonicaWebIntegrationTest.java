@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.accelhack.monica.MonicaClient;
 import com.accelhack.monica.MonicaEnvelope;
 import com.accelhack.monica.MonicaEvent;
+import com.accelhack.monica.MonicaPresenceStore;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -74,8 +75,16 @@ class MonicaWebIntegrationTest {
 
   private MonicaClient client(List<MonicaEnvelope> sent) {
     return MonicaClient.builder()
+        .presenceStore(alreadyReported())
         .environment("test")
         .transport(envelope -> { sent.add(envelope); return true; })
         .build();
+  }
+
+  /** Keeps the init heartbeat out of what these tests count. */
+  private static MonicaPresenceStore alreadyReported() {
+    MonicaPresenceStore store = MonicaPresenceStore.inMemory();
+    store.setLastReportedAt(System.currentTimeMillis());
+    return store;
   }
 }

@@ -29,7 +29,7 @@ class ScopeTest {
   @Test
   void dropsTheOldestBreadcrumbOnceTheBoundIsReached() {
     MonicaEvent item = captureWith(
-        MonicaClient.builder().environment("test").maxBreadcrumbs(2),
+        MonicaClient.builder().presenceStore(MonicaClientTest.alreadyReported()).environment("test").maxBreadcrumbs(2),
         scope -> {
           scope.addBreadcrumb("ui.click", "first");
           scope.addBreadcrumb("ui.click", "second");
@@ -47,6 +47,7 @@ class ScopeTest {
   void carriesTheBoundIntoARequestScope() {
     List<MonicaEnvelope> sent = new ArrayList<>();
     try (MonicaClient client = MonicaClient.builder()
+        .presenceStore(MonicaClientTest.alreadyReported())
         .environment("test")
         .maxBreadcrumbs(1)
         .transport(envelope -> { sent.add(envelope); return true; })
@@ -68,19 +69,19 @@ class ScopeTest {
 
   @Test
   void sendsNoUserUntilOneIsSet() {
-    MonicaEvent absent = captureWith(MonicaClient.builder().environment("test"), scope -> { });
+    MonicaEvent absent = captureWith(MonicaClient.builder().presenceStore(MonicaClientTest.alreadyReported()).environment("test"), scope -> { });
     assertNull(absent.get("user"));
 
     Map<String, Object> user = new LinkedHashMap<>();
     user.put("id", "u_123");
-    MonicaEvent present = captureWith(MonicaClient.builder().environment("test"),
+    MonicaEvent present = captureWith(MonicaClient.builder().presenceStore(MonicaClientTest.alreadyReported()).environment("test"),
         scope -> scope.setUser(user));
     assertEquals(Collections.singletonMap("id", "u_123"), present.get("user"));
   }
 
   @Test
   void clearingTheUserRemovesItFromLaterEvents() {
-    MonicaEvent item = captureWith(MonicaClient.builder().environment("test"), scope -> {
+    MonicaEvent item = captureWith(MonicaClient.builder().presenceStore(MonicaClientTest.alreadyReported()).environment("test"), scope -> {
       scope.setUser(Collections.singletonMap("id", "u_123"));
       scope.setUser(null);
     });
@@ -91,6 +92,7 @@ class ScopeTest {
   void reportsTheIntegrationThatProducedTheEnvelope() {
     List<MonicaEnvelope> sent = new ArrayList<>();
     try (MonicaClient client = MonicaClient.builder()
+        .presenceStore(MonicaClientTest.alreadyReported())
         .environment("test")
         .sdk("com.accelhack.monica:monica-android", "9.9.9")
         .transport(envelope -> { sent.add(envelope); return true; })
@@ -106,6 +108,7 @@ class ScopeTest {
   void defaultsToTheCoreIdentity() {
     List<MonicaEnvelope> sent = new ArrayList<>();
     try (MonicaClient client = MonicaClient.builder()
+        .presenceStore(MonicaClientTest.alreadyReported())
         .environment("test")
         .transport(envelope -> { sent.add(envelope); return true; })
         .build()) {
@@ -119,11 +122,13 @@ class ScopeTest {
   @Test
   void rejectsAnEmptySdkNameOrVersion() {
     assertThrows(IllegalArgumentException.class, () -> MonicaClient.builder()
+        .presenceStore(MonicaClientTest.alreadyReported())
         .environment("test")
         .sdk("  ", "1.0.0")
         .transport(envelope -> true)
         .build());
     assertThrows(IllegalArgumentException.class, () -> MonicaClient.builder()
+        .presenceStore(MonicaClientTest.alreadyReported())
         .environment("test")
         .sdk("name", "  ")
         .transport(envelope -> true)
@@ -133,6 +138,7 @@ class ScopeTest {
   @Test
   void rejectsANonPositiveBreadcrumbBound() {
     assertThrows(IllegalArgumentException.class, () -> MonicaClient.builder()
+        .presenceStore(MonicaClientTest.alreadyReported())
         .environment("test")
         .maxBreadcrumbs(0)
         .transport(envelope -> true)

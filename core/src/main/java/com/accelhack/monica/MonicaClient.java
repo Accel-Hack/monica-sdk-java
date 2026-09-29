@@ -25,6 +25,7 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 
 public final class MonicaClient implements AutoCloseable {
   private static final Set<String> LEVELS = new HashSet<>(
@@ -35,6 +36,14 @@ public final class MonicaClient implements AutoCloseable {
   // million bytes also protects the decompressed limit and leaves framing room.
   static final int MAX_SAFE_ENVELOPE_JSON_BYTES = 1_000_000;
   private static final ObjectMapper ENVELOPE_MAPPER = new ObjectMapper();
+  /** transport.json {@code presence}; the contract test compares them with the bundle. */
+  static final long PRESENCE_INTERVAL_MILLIS = 86_400_000L;
+  static final long PRESENCE_MIN_INTERVAL_MILLIS = 60_000L;
+  static final double PRESENCE_SAMPLE_RATE = 1;
+  static final double PRESENCE_MIN_SAMPLE_RATE = 0.01;
+  // Plain decimals only: no sign, no exponent. Anything else is a broken header and ignored.
+  private static final Pattern PRESENCE_INTERVAL_VALUE = Pattern.compile("\\d{1,18}");
+  private static final Pattern PRESENCE_RATE_VALUE = Pattern.compile("\\d+(\\.\\d+)?");
 
   private final MonicaOptions options;
   private final Object lock = new Object();
@@ -51,7 +60,8 @@ public final class MonicaClient implements AutoCloseable {
     this.options = options;
     this.globalScope = new Scope(options.maxBreadcrumbs);
     this.sender = Executors.newSingleThreadScheduledExecutor(daemonThreadFactory());
-    sender.scheduleWithFixedDelay(this::drainBestEffort, options.flushInterval.toMillis(),
+    sender.execute(() -> heartbeat("start"));
+    sender.scheduleWithFixedDelay(this::tick, options.flushInterval.toMillis(),
         options.flushInterval.toMillis(), TimeUnit.MILLISECONDS);
   }
 
@@ -159,6 +169,20 @@ public final class MonicaClient implements AutoCloseable {
     return lastSendResult;
   }
 
+  /**
+   * Sends a {@code start} {@code client_report} unless an envelope was accepted, or a heartbeat
+   * attempted, within the presence interval. For a distributable to call when the app returns to
+   * the foreground; the client already checks at init and on every flush tick.
+   */
+  public void checkPresence() {
+    if (closed) return;
+    try {
+      sender.execute(() -> heartbeat("start"));
+    } catch (RuntimeException ignored) {
+      // Rejected after close: nothing left to report.
+    }
+  }
+
   public MonicaStats stats() {
     synchronized (lock) {
       return new MonicaStats(queue.size(), discarded);
@@ -225,6 +249,95 @@ public final class MonicaClient implements AutoCloseable {
     return eventId;
   }
 
+  void tick() {
+    drainBestEffort();
+    heartbeat("interval");
+  }
+
+  /**
+   * One {@code client_report}, alone in its envelope, when nothing was accepted for an interval.
+   * The time is written before sending, so a heartbeat that fails is retried an interval later
+   * rather than on every tick; a {@code 202} writes it again in {@link #deliver}.
+   */
+  private void heartbeat(String trigger) {
+    try {
+      long now = nowMillis();
+      MonicaPresenceStore store = options.presenceStore;
+      Long last = store.getLastReportedAt();
+      // A time in the future is a clock that was set back: treat it as nothing stored.
+      if (last != null && last <= now && now - last < presenceInterval(store)) return;
+      // Queued errors are about to be flushed, and their 202 says the same thing.
+      if ("interval".equals(trigger) && queued() > 0) return;
+      store.setLastReportedAt(now);
+      Double stored = store.getSampleRate();
+      double rate = stored != null && stored >= PRESENCE_MIN_SAMPLE_RATE && stored <= 1 ? stored
+          : PRESENCE_SAMPLE_RATE;
+      if (rate < 1 && options.random.get() >= rate) return;
+      String timestamp = Instant.ofEpochMilli(now).toString();
+      MonicaEvent item = new MonicaEvent()
+          .put("type", "client_report")
+          .put("timestamp", timestamp)
+          .put("platform", "java")
+          .put("environment", options.environment)
+          .put("trigger", trigger)
+          .put("release", options.release);
+      long pendingDiscarded;
+      synchronized (lock) {
+        pendingDiscarded = discarded;
+        discarded = 0;
+      }
+      MonicaEnvelope envelope = new MonicaEnvelope(options.sdkName, options.sdkVersion,
+          timestamp, pendingDiscarded, Collections.singletonList(item));
+      if (!deliver(envelope).isAccepted()) {
+        synchronized (lock) {
+          discarded += pendingDiscarded;
+        }
+      }
+    } catch (Throwable ignored) {
+      // MONICA must never fail the host process or its scheduling thread.
+    }
+  }
+
+  private static long presenceInterval(MonicaPresenceStore store) {
+    Long stored = store.getIntervalMillis();
+    return stored != null && stored >= PRESENCE_MIN_INTERVAL_MILLIS ? stored
+        : PRESENCE_INTERVAL_MILLIS;
+  }
+
+  private SendResult deliver(MonicaEnvelope envelope) {
+    SendResult result;
+    try {
+      // deliver, not send: a rejection's status and the issues a 422 lists are the only way
+      // an application learns that its own payload is what ingest is refusing.
+      result = options.transport.deliver(envelope);
+    } catch (Throwable ignored) {
+      result = SendResult.of(false);
+    }
+    lastSendResult = result == null ? SendResult.of(false) : result;
+    if (lastSendResult.isAccepted()) recordPresence(lastSendResult);
+    return lastSendResult;
+  }
+
+  /** The one place a {@code 202} and its presence headers are written to the store. */
+  private void recordPresence(SendResult result) {
+    try {
+      MonicaPresenceStore store = options.presenceStore;
+      store.setLastReportedAt(nowMillis());
+      String interval = result.getPresenceIntervalMs();
+      if (interval != null && PRESENCE_INTERVAL_VALUE.matcher(interval.trim()).matches()) {
+        long value = Long.parseLong(interval.trim());
+        if (value >= PRESENCE_MIN_INTERVAL_MILLIS) store.setIntervalMillis(value);
+      }
+      String rate = result.getPresenceSampleRate();
+      if (rate != null && PRESENCE_RATE_VALUE.matcher(rate.trim()).matches()) {
+        double value = Double.parseDouble(rate.trim());
+        if (value >= PRESENCE_MIN_SAMPLE_RATE && value <= 1) store.setSampleRate(value);
+      }
+    } catch (Throwable ignored) {
+      // A broken store costs a heartbeat at most, never the envelope that was just accepted.
+    }
+  }
+
   private void drainBestEffort() {
     try {
       drainOnce();
@@ -255,17 +368,7 @@ public final class MonicaClient implements AutoCloseable {
       List<MonicaEvent> items = new ArrayList<>(batch.subList(0, count));
       MonicaEnvelope envelope = new MonicaEnvelope(options.sdkName, options.sdkVersion,
           sentAt, pendingDiscarded, items);
-      SendResult result;
-      try {
-        // deliver, not send: a rejection's status and the issues a 422 lists are the only way
-        // an application learns that its own payload is what ingest is refusing.
-        result = options.transport.deliver(envelope);
-      } catch (Throwable ignored) {
-        result = SendResult.of(false);
-      }
-      lastSendResult = result == null ? SendResult.of(false) : result;
-      boolean accepted = lastSendResult.isAccepted();
-      if (!accepted) {
+      if (!deliver(envelope).isAccepted()) {
         synchronized (lock) {
           discarded += pendingDiscarded + batch.size();
         }
@@ -407,7 +510,9 @@ public final class MonicaClient implements AutoCloseable {
     public Builder onDiagnostic(MonicaDiagnostic value) { options.onDiagnostic(value); return this; }
     public Builder maxRetries(int value) { options.maxRetries(value); return this; }
     public Builder requestTimeout(Duration value) { options.requestTimeout(value); return this; }
+    public Builder presenceStore(MonicaPresenceStore value) { options.presenceStore(value); return this; }
     Builder clock(Supplier<Instant> value) { options.clock(value); return this; }
+    Builder random(Supplier<Double> value) { options.random(value); return this; }
 
     public MonicaClient build() {
       return new MonicaClient(options.build());

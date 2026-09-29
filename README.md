@@ -32,7 +32,7 @@ Maven registry は匿名で取得できないので、repository の宣言と to
   <dependency>
     <groupId>com.accelhack.monica</groupId>
     <artifactId>monica-spring-boot2-starter</artifactId>
-    <version>0.2.0</version>
+    <version>0.3.0</version>
   </dependency>
 </dependencies>
 ```
@@ -246,9 +246,10 @@ Logback が SLF4J の binding のとき、health indicator は Actuator が clas
 | `sampleRate` | `double` | `1` | 0〜1。event ごとに判定する |
 | `maxRetries` | `int` | `5` | 再送回数（`429` / `5xx` / network 失敗のみ） |
 | `requestTimeout` | `Duration` | `2s` | connect と request の timeout |
-| `sdk` | `(String name, String version)` | `com.accelhack.monica:monica-core` / `0.2.0` | envelope の `sdk` |
+| `sdk` | `(String name, String version)` | `com.accelhack.monica:monica-core` / `0.3.0` | envelope の `sdk` |
 | `transport` | `MonicaTransport` | JDK HttpClient 実装 | 送信経路の差し替え |
 | `onDiagnostic` | `MonicaDiagnostic` | `System.Logger` へ `WARNING` | 拒否の警告先。[TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
+| `presenceStore` | `MonicaPresenceStore` | プロセス内メモリ | 稼働確認の状態の保存先。配布物（monica-android）が端末のストレージに差し替える。サーバでは指定しない |
 
 ### Spring Boot properties
 
@@ -292,6 +293,31 @@ Spring Boot starter: HTTP method と Spring MVC の route template（`/orders/{i
 
 ユーザーを特定する情報は自動では読まない。`Scope.setUser(...)` を呼んだときだけ event に入る。
 tag・context・breadcrumb も、アプリケーションが入れたものだけを送る。
+
+## 稼働確認
+
+アプリケーションが動いていることを MONICA に知らせるため、`client_report` item 1 件だけの
+envelope（heartbeat）を送る。endpoint・認証・リトライは error の送信と同じで、背景 thread から送る。
+
+- init 時に `trigger: "start"` を 1 通送る。
+- 定期送信（`flushInterval` ごと）のたびに判定し、直近 1 間隔（既定 1 日）に受理（`202`）された
+  envelope が無く、queue が空なら `trigger: "interval"` を送る。error の envelope が受理されても
+  期限は伸びる。
+- 送信に失敗した heartbeat は次の tick で再送せず、1 間隔後の判定まで待つ。
+- 状態（最後に受理された時刻または heartbeat を試みた時刻、MONICA から届いた間隔）はプロセス内
+  メモリに持つ。再起動や `MonicaClient` の作り直しのたびに `start` が出る。複数プロセスはそれぞれ
+  送る。
+- 判定の間隔は `202` の応答 header `X-Monica-Presence-Interval-Ms` を読んで次の判定から使う。
+  既定は 1 日で、60 秒未満や数値でない値は無視する。`X-Monica-Presence-Sample-Rate` は読むが、
+  この SDK は間引かない。SDK 側に設定項目は無い。
+
+導入側で気を付けること:
+
+- Spring Boot では application context が起動するたびに `start` が 1 通出る。実 DSN を設定した
+  test も同じなので、test では `monica.enabled=false` にするか DSN を外す。
+- MONICA に届かないと、init 直後の `start` のリトライが送信 thread を塞ぐ（既定の設定で backoff
+  の待ちだけで最大 31 秒、各回の `requestTimeout` が加わる）。その間の error は queue に溜まり、
+  後で送る。error の送信が失敗したときと同じ挙動。
 
 ## 送信結果と診断
 

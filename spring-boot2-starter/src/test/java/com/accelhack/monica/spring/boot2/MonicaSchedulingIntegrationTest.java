@@ -9,6 +9,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.accelhack.monica.MonicaClient;
 import com.accelhack.monica.MonicaEnvelope;
+import com.accelhack.monica.MonicaPresenceStore;
 import com.accelhack.monica.logback.MonicaAppender;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -21,6 +22,7 @@ class MonicaSchedulingIntegrationTest {
   void capturesAndPreservesTheDefaultScheduledTaskErrorLogWithoutDuplication() {
     List<MonicaEnvelope> sent = new ArrayList<>();
     MonicaClient client = MonicaClient.builder()
+        .presenceStore(alreadyReported())
         .environment("test")
         .transport(envelope -> { sent.add(envelope); return true; })
         .build();
@@ -55,5 +57,12 @@ class MonicaSchedulingIntegrationTest {
       logs.stop();
       client.close();
     }
+  }
+
+  /** Keeps the init heartbeat out of what these tests count. */
+  private static MonicaPresenceStore alreadyReported() {
+    MonicaPresenceStore store = MonicaPresenceStore.inMemory();
+    store.setLastReportedAt(System.currentTimeMillis());
+    return store;
   }
 }
