@@ -294,6 +294,25 @@ Spring Boot starter: HTTP method と Spring MVC の route template（`/orders/{i
 ユーザーを特定する情報は自動では読まない。`Scope.setUser(...)` を呼んだときだけ event に入る。
 tag・context・breadcrumb も、アプリケーションが入れたものだけを送る。
 
+## Issue のまとめ方
+
+どのエラーを同じ Issue にまとめるかは MONICA 側で決まり、SDK は決めない。規則は
+[`spec/v1/grouping.md`](spec/v1/grouping.md) にある。分かれ方が意外なときは、管理画面の
+Issue 詳細の「まとめ方」で、その Issue がどの値でまとめられたかを確かめる。
+
+この SDK に固有の点は次のとおり。
+
+- frame の関数名は `完全修飾クラス名.メソッド名` で送る。lambda や匿名クラスの連番
+  （`lambda$run$0`、`Outer$1`）と、CGLIB などの proxy が付ける `$$` 以降の接尾辞は MONICA が無視する
+- `in_app: true` になるのは、`inAppPackage`（Spring Boot では `monica.in-app-packages`）に
+  前方一致した class の frame だけ。既定は空で、そのままだと全 frame が `in_app: false` になり、
+  throw 地点に近い JDK や framework の frame で Issue が決まる。自分の package を必ず設定する
+- `fingerprint` を渡す専用の API は無い。`beforeSend` で `event.put("fingerprint", List.of(...))`
+  とする。元の例外は `hint.getOriginalException()` で取れる。`fingerprint` は既定の分け方を
+  置き換えるので、どこで起きたかの区別も値に含める
+- Logback appender で Throwable の無い log を送ると（`setCaptureMessages(true)`）、message は
+  `{}` を置換する前の pattern なので、引数だけが違う log は 1 つの Issue になる
+
 ## 稼働確認
 
 アプリケーションが動いていることを MONICA に知らせるため、`client_report` item 1 件だけの
