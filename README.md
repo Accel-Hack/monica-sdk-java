@@ -390,7 +390,7 @@ Apache License 2.0（[LICENSE](LICENSE)）。
 mvn verify
 ```
 
-CI は Java 11・17・18 で同じ `mvn verify` を走らせる。`spring-boot4-starter` は Java 17 以上で
+CI は Java 11・17・18・21 で同じ `mvn verify` を走らせる。`spring-boot4-starter` は Java 17 以上で
 有効になる profile `spring-boot4` にあるので、Java 11 の build には入らない。
 Spring Boot 4 の別の版で test するときは `-Dspring-boot4.version=4.1.2` のように版を渡す。
 

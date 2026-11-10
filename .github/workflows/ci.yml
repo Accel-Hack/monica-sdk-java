@@ -5,6 +5,8 @@ name: ci
 #   - test: 対応する Java の下限（11）、公開に使う 17、現行の LTS 手前で挙動が変わりやすい
 #           18 で `mvn verify` が通ること。Spring Boot 4 starter は Java 17 以上で有効になる
 #           profile（spring-boot4）にあるので、11 の job では build されない。
+#           21 は Spring Boot 4 starter を使うアプリの Java。virtual threads の scheduler の
+#           test が走るのもこの job だけ（17・18 では skip）。
 #           契約テスト（core の ProtocolContractTest）もここで走る。spec/ の vendoring した
 #           コピーを読むだけなので network は要らない
 #   - spec: 取り込んだ公開契約が配信元から動いていないこと
@@ -33,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        java: ["11", "17", "18"]
+        java: ["11", "17", "18", "21"]
     steps:
       - uses: actions/checkout@v6
 
