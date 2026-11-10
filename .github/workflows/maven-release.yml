@@ -38,7 +38,9 @@ jobs:
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: "11"
+          # Spring Boot 4 starter は Java 17 以上でないと build されない。他の module は
+          # maven.compiler.release で Java 11 向けに compile される。
+          java-version: "17"
           cache: maven
           cache-dependency-path: |
             pom.xml

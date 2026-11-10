@@ -2,9 +2,11 @@ name: ci
 
 # Java SDK の検査。見るのは 2 つ。
 #
-#   - test: 対応する Java の下限（11）と、現行の LTS 手前で挙動が変わりやすい 18 で
-#           `mvn verify` が通ること。契約テスト（core の ProtocolContractTest）も
-#           ここで走る。spec/ の vendoring したコピーを読むだけなので network は要らない
+#   - test: 対応する Java の下限（11）、公開に使う 17、現行の LTS 手前で挙動が変わりやすい
+#           18 で `mvn verify` が通ること。Spring Boot 4 starter は Java 17 以上で有効になる
+#           profile（spring-boot4）にあるので、11 の job では build されない。
+#           契約テスト（core の ProtocolContractTest）もここで走る。spec/ の vendoring した
+#           コピーを読むだけなので network は要らない
 #   - spec: 取り込んだ公開契約が配信元から動いていないこと
 #
 # 移設元は Accel-Hack/monica の .github/workflows/ci.yml にあった java-sdk-runtime。
@@ -31,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        java: ["11", "18"]
+        java: ["11", "17", "18"]
     steps:
       - uses: actions/checkout@v6
 
@@ -51,7 +53,7 @@ jobs:
       - run: mvn --batch-mode --no-transfer-progress verify
 
   spec:
-    # 配信元を叩くので matrix から外してある。network の失敗で Java 2 版の
+    # 配信元を叩くので matrix から外してある。network の失敗で各 Java 版の
     # job が道連れになると、落ちた理由が読めなくなる。
     name: 公開契約
     runs-on: ubuntu-latest
