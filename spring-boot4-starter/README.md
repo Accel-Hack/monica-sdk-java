@@ -15,7 +15,7 @@ classpath に入る。
 <dependency>
   <groupId>com.accelhack.monica</groupId>
   <artifactId>monica-spring-boot4-starter</artifactId>
-  <version>0.3.1</version>
+  <version>0.4.0</version>
 </dependency>
 ```
 
