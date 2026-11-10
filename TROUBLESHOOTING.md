@@ -30,7 +30,7 @@ MonicaClient.builder()
 `transport(...)` で自前の transport を渡した場合、`onDiagnostic` はその transport には届かない。
 `JdkHttpTransport` を自分で組み立てるなら、4 引数の constructor に `MonicaDiagnostic` を渡す。
 
-Spring Boot 2 starter は `onDiagnostic` を property に出していない。差し替えるときは
+Spring Boot starter（2・4）は `onDiagnostic` を property に出していない。差し替えるときは
 `MonicaClient` bean を自分で定義する。
 
 ## ingest が envelope を拒否したとき
