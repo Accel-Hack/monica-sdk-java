@@ -176,4 +176,17 @@
     </pluginManagement>
   </build>
 
+  <profiles>
+    <!-- Spring Boot 4 は Java 17 以上が要る。Java 11 の build はこの module を飛ばす。 -->
+    <profile>
+      <id>spring-boot4</id>
+      <activation>
+        <jdk>[17,)</jdk>
+      </activation>
+      <modules>
+        <module>spring-boot4-starter</module>
+      </modules>
+    </profile>
+  </profiles>
+
 </project>
