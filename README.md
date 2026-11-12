@@ -1,7 +1,7 @@
 # monica-sdk-java
 
 Java アプリケーションで起きた例外とメッセージを MONICA の ingest へ送る SDK。
-core・Logback appender・Spring Boot 2 starter の 3 artifact を提供する。
+core・Logback appender・Spring Boot 2 starter・Spring Boot 4 starter の 4 artifact を提供する。
 
 ## パッケージ
 
@@ -10,6 +10,7 @@ core・Logback appender・Spring Boot 2 starter の 3 artifact を提供する�
 | [`core/`](core/README.md) | `com.accelhack.monica:monica-core` | framework 非依存の client。Java 11+ |
 | [`logback/`](logback/README.md) | `com.accelhack.monica:monica-logback` | Logback appender。Java 11+ / Logback（検証は 1.2.13） |
 | [`spring-boot2-starter/`](spring-boot2-starter/README.md) | `com.accelhack.monica:monica-spring-boot2-starter` | Spring Boot 2 auto-configuration。Spring Boot 2 系（検証は 2.6.15）/ `javax.servlet` |
+| [`spring-boot4-starter/`](spring-boot4-starter/README.md) | `com.accelhack.monica:monica-spring-boot4-starter` | Spring Boot 4 auto-configuration。Java 17+ / Spring Boot 4 系（検証は 4.0.9）/ `jakarta.servlet` |
 
 Android アプリ向けの `monica-android` は別 repository（`Accel-Hack/monica-sdk-android`）にある。
 
@@ -32,10 +33,12 @@ Maven registry は匿名で取得できないので、repository の宣言と to
   <dependency>
     <groupId>com.accelhack.monica</groupId>
     <artifactId>monica-spring-boot2-starter</artifactId>
-    <version>0.3.1</version>
+    <version>0.4.0</version>
   </dependency>
 </dependencies>
 ```
+
+Spring Boot 4 では artifactId を `monica-spring-boot4-starter` にする。
 
 Spring を使わない場合は `monica-core`（必要なら `monica-logback`）を同じ座標で指定する。
 
@@ -113,7 +116,7 @@ MonicaClient monica = MonicaClient.builder()
 DSN は secret key（`msk_` 始まり）でなければならず、`localhost` / `127.0.0.1` 以外は
 `https` が必要。`environment` は必須で 128 文字以内。
 
-Spring Boot 2 starter を使う場合は `MonicaClient` を自分で作らず、`monica.dsn` を設定する
+Spring Boot starter を使う場合は `MonicaClient` を自分で作らず、`monica.dsn` を設定する
 （「使い方」参照）。
 
 ## 使い方
@@ -186,9 +189,11 @@ appender.start();
 context.getLogger(Logger.ROOT_LOGGER_NAME).addAppender(appender);
 ```
 
-Spring Boot 2 starter を使う場合は、この登録を starter が行う。
+Spring Boot starter を使う場合は、この登録を starter が行う。
 
-### Spring Boot 2 starter
+### Spring Boot starter
+
+Spring Boot 2 starter と Spring Boot 4 starter は、properties・bean・tag が同じ。
 
 `monica.dsn` を設定すると `MonicaClient` bean が作られ、auto-configuration が有効になる。
 `monica.dsn` が無いとき（`${MONICA_DSN:}` が空文字に展開された場合を含め、空白だけの値も同じ）は
@@ -219,8 +224,10 @@ auto-configuration が入れるもの:
 - 疎通確認用の `MonicaTestService` bean（`sendTestEvent()` が `info` event を 1 件送って flush する）
 
 MVC の capture と request scope は servlet の Spring MVC アプリケーションのとき、appender は
-Logback が SLF4J の binding のとき、health indicator は Actuator が classpath にあるときだけ入る。
-`@Scheduled` の capture は Spring Boot が作る `TaskScheduler` へ error handler を
+Logback が SLF4J の binding のとき、health indicator は Actuator（Spring Boot 4 では
+`spring-boot-health`）が classpath にあるときだけ入る。
+`@Scheduled` の capture は Spring Boot が作る `TaskScheduler`（Spring Boot 4 で
+`spring.threads.virtual.enabled=true` のときは `SimpleAsyncTaskScheduler`）へ error handler を
 差し込む形なので、`TaskScheduler` や `SchedulingConfigurer` を自分で定義している場合は入らない。
 
 `BeforeSend` bean を定義すると auto-configuration の client に適用される。`MonicaClient` bean を
@@ -246,7 +253,7 @@ Logback が SLF4J の binding のとき、health indicator は Actuator が clas
 | `sampleRate` | `double` | `1` | 0〜1。event ごとに判定する |
 | `maxRetries` | `int` | `5` | 再送回数（`429` / `5xx` / network 失敗のみ） |
 | `requestTimeout` | `Duration` | `2s` | connect と request の timeout |
-| `sdk` | `(String name, String version)` | `com.accelhack.monica:monica-core` / `0.3.1` | envelope の `sdk` |
+| `sdk` | `(String name, String version)` | `com.accelhack.monica:monica-core` / `0.4.0` | envelope の `sdk` |
 | `transport` | `MonicaTransport` | JDK HttpClient 実装 | 送信経路の差し替え |
 | `onDiagnostic` | `MonicaDiagnostic` | `System.Logger` へ `WARNING` | 拒否の警告先。[TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
 | `presenceStore` | `MonicaPresenceStore` | プロセス内メモリ | 稼働確認の状態の保存先。配布物（monica-android）が端末のストレージに差し替える。サーバでは指定しない |
@@ -368,7 +375,8 @@ envelope（heartbeat）を送る。endpoint・認証・リトライは error の
 - `401` を受けた後、その client は ingest へ POST しない。鍵を入れ替えたら `MonicaClient` を作り直す。
 - capture は queue へ積むだけで、送信失敗を呼び出し元へ伝えない。プロセス終了前に `flush()` か
   `close()` を呼ばないと queue に残った event は失われる。
-- Spring Boot 2 starter は `javax.servlet` 系専用。`jakarta.servlet` の Spring Boot 3 では動かない。
+- 対応する Spring Boot は 2 系（`monica-spring-boot2-starter`、`javax.servlet`）と 4 系
+  （`monica-spring-boot4-starter`、`jakarta.servlet`、Java 17 以上）。Spring Boot 3 には対応していない。
 
 ## ライセンス
 
@@ -382,7 +390,9 @@ Apache License 2.0（[LICENSE](LICENSE)）。
 mvn verify
 ```
 
-CI は Java 11 と 18 で同じ `mvn verify` を走らせる。
+CI は Java 11・17・18・21 で同じ `mvn verify` を走らせる。`spring-boot4-starter` は Java 17 以上で
+有効になる profile `spring-boot4` にあるので、Java 11 の build には入らない。
+Spring Boot 4 の別の版で test するときは `-Dspring-boot4.version=4.1.2` のように版を渡す。
 
 ### 公開契約（spec/）
 
