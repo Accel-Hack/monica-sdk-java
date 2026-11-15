@@ -1,0 +1,2 @@
+org.springframework.boot.SpringApplicationRunListener=\
+com.accelhack.monica.spring.boot4.MonicaStartupFailureReporter

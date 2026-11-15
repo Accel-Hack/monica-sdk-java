@@ -13,7 +13,7 @@ Java 11 以上、Logback（検証は 1.2.13）。`logback-classic` は optional 
 <dependency>
   <groupId>com.accelhack.monica</groupId>
   <artifactId>monica-logback</artifactId>
-  <version>0.3.1</version>
+  <version>0.4.0</version>
 </dependency>
 ```
 
@@ -35,8 +35,9 @@ appender.start();
 context.getLogger(Logger.ROOT_LOGGER_NAME).addAppender(appender);
 ```
 
-Spring Boot 2 を使う場合は、この登録を
-[`monica-spring-boot2-starter`](../spring-boot2-starter/README.md) が行う。
+Spring Boot を使う場合は、この登録を
+[`monica-spring-boot2-starter`](../spring-boot2-starter/README.md) または
+[`monica-spring-boot4-starter`](../spring-boot4-starter/README.md) が行う。
 
 ## オプション
 
